@@ -1,0 +1,6 @@
+---
+en:
+  decidim:
+    components:
+      causal_loop:
+        name: CausalLoop

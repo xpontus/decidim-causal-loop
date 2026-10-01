@@ -1,0 +1,55 @@
+<h2 class="section-heading">Diagram editors</h2>
+
+<p class="help-text">Users listed here may create and edit nodes and links in this component's diagram.</p>
+
+<% if @editors.any? %>
+  <table class="table-list">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Added</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @editors.each do |editor| %>
+        <tr>
+          <td><%= editor.user.name %></td>
+          <td><%= editor.user.email %></td>
+          <td><%= l(editor.created_at, format: :short) %></td>
+          <td>
+            <%= button_to "Remove",
+                          editor_path(editor),
+                          method: :delete,
+                          data: { confirm: "Remove #{editor.user.name} as editor?" },
+                          class: "button small alert hollow" %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <p>No editors yet.</p>
+<% end %>
+
+<hr>
+
+<h3>Add editor</h3>
+
+<%= form_tag editors_path, method: :post do %>
+  <div class="row">
+    <div class="medium-6 columns">
+      <label>
+        User
+        <%= select_tag :decidim_user_id,
+                       options_from_collection_for_select(@participants, :id, :name),
+                       prompt: "— select user —",
+                       class: "select" %>
+      </label>
+    </div>
+    <div class="medium-6 columns" style="padding-top:1.5rem;">
+      <%= submit_tag "Add editor", class: "button" %>
+    </div>
+  </div>
+<% end %>

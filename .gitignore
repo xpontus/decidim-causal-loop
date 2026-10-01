@@ -1,0 +1,32 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+# rspec failure tracking
+.rspec-failures
+
+# env configuration files
+.env
+.envrc
+.rbenv-vars
+
+# default test application
+spec/decidim_dummy_app
+
+# default development application
+development_app
+
+# Local AI key (never commit)
+config/anthropic_api_key
+
+# This is a gem: the host app owns dependency resolution
+Gemfile.lock
+
+# Private working notes, never published
+CLAUDE.md
+AGENTS.md
