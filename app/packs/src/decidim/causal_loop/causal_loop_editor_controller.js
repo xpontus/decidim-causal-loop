@@ -1436,32 +1436,82 @@ export default class extends Controller {
 
     this.appendChatMessage("user", text);
     const pending = this.appendChatMessage("pending", "Thinking…");
+    const steps = [];
+    let finished = false;
+    this.beginAiStep(text);
+
+    // The reply streams in as one JSON event per line (see
+    // ConversationsController): progress after each tool call, with the
+    // changes it made, which are drawn at once; then done or error.
+    const handle = (event) => {
+      if (event.type === "progress") {
+        steps.push(event.text);
+        pending.textContent = [...steps, "Thinking…"].join("\n");
+        this.applyAiActions(event.actions || []);
+      } else if (event.type === "done") {
+        finished = true;
+        this.chatHistory = event.history || [];
+        this.saveChat();
+        this.appendChatMessage("assistant", event.reply || "(no reply)");
+      } else if (event.type === "error") {
+        finished = true;
+        this.appendChatMessage("error", event.error);
+      }
+    };
 
     try {
-      const resp = await this.apiRequest(this.conversationsUrlValue, "POST", {
-        message: text,
-        history: this.chatHistory
+      const resp = await fetch(this.conversationsUrlValue, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/x-ndjson, application/json",
+          "X-CSRF-Token": this.csrfTokenValue
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ message: text, history: this.chatHistory })
       });
-      pending.remove();
 
-      if (resp.ok) {
-        const data = await resp.json();
-        this.chatHistory = data.history || [];
-        this.saveChat();
-        this.appendChatMessage("assistant", data.reply || "(no reply)");
-        if (data.actions?.length) this.applyActions(data.actions, text);
-      } else {
+      if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        this.appendChatMessage("error", body.error || `Server error ${resp.status}`);
+        handle({ type: "error", error: body.error || `Server error ${resp.status}` });
+      } else if (resp.headers.get("Content-Type")?.includes("application/x-ndjson")) {
+        await this.readEvents(resp, handle);
+      } else {
+        const data = await resp.json();
+        this.applyAiActions(data.actions || []);
+        handle({ ...data, type: "done" });
       }
+      if (!finished) handle({ type: "error", error: "The connection closed before the assistant finished." });
     } catch (err) {
-      pending.remove();
-      this.appendChatMessage("error", `Network error: ${err.message}`);
+      handle({ type: "error", error: `Network error: ${err.message}` });
     } finally {
+      pending.remove();
+      this.finishAiStep();
       input.disabled = false;
       if (send) send.disabled = false;
       input.focus();
     }
+  }
+
+  // Calls onEvent with each line of a newline-delimited JSON response, as
+  // the lines arrive.
+  async readEvents(resp, onEvent) {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const flush = (final) => {
+      const lines = buffer.split("\n");
+      buffer = final ? "" : lines.pop();
+      lines.filter(line => line.trim()).forEach(line => onEvent(JSON.parse(line)));
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      flush(false);
+    }
+    buffer += decoder.decode();
+    flush(true);
   }
 
   // The conversation is kept in browser storage, per diagram, so it
@@ -1504,22 +1554,29 @@ export default class extends Controller {
     return div;
   }
 
-  // The server has already made these changes; this shows them, and records
-  // the whole reply as one step that can be undone. The inverse of each
-  // action is taken from the canvas before the action is applied. Deleting
-  // the old diagram is asked about, and done, as a step of its own.
-  applyActions(actions, request = "") {
-    let clearIds = null;
-    const forward = [];
-    const backward = [];
-    const step = (operation, inverse) => { forward.push(operation); backward.unshift(inverse); this.applyToCanvas(operation); };
+  // An AI reply arrives in parts; each part's changes are drawn as it comes,
+  // and the whole reply is recorded as one step that can be undone. The
+  // server has already made the changes. The inverse of each action is taken
+  // from the canvas before the action is applied. Deleting the old diagram
+  // is asked about, and done, as a step of its own once the reply is in.
+  beginAiStep(request) {
+    this.aiStep = { request, forward: [], backward: [], clearIds: null };
+  }
+
+  applyAiActions(actions) {
+    const aiStep = this.aiStep;
+    const step = (operation, inverse) => {
+      aiStep.forward.push(operation);
+      aiStep.backward.unshift(inverse);
+      this.applyToCanvas(operation);
+    };
 
     for (const action of actions) {
       const node = this.cy.getElementById(`n${action.id}`);
       const edge = this.cy.getElementById(`l${action.id}`);
       switch (action.type) {
         case "confirm_clear":
-          clearIds = action.node_ids;
+          aiStep.clearIds = action.node_ids;
           break;
         case "add_node":
           if (!node.length) step(this.restoreOp("node", action), this.deleteOp("node", action.id));
@@ -1547,7 +1604,11 @@ export default class extends Controller {
           break;
       }
     }
+  }
 
+  finishAiStep() {
+    const { request, forward, backward, clearIds } = this.aiStep;
+    this.aiStep = null;
     if (forward.length) {
       const words = request.split(/\s+/).filter(Boolean);
       const summary = words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");

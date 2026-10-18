@@ -120,8 +120,9 @@ See [Installation](#installation) to add it to a Decidim site.
   [AI assistant](#ai-assistant)). It is available only to editors.
 - It can add, rename and delete variables and links and change polarity. It
   cannot move or resize nodes or bend links.
-- Its changes take effect immediately, without asking for confirmation, and
-  can include deletions. **Undo** reverses a whole reply in one step. When
+- While it works, the chat shows each step ("Added 12 variables") and the
+  changes appear on the canvas as they are made. Its changes take effect
+  immediately, without asking for confirmation, and can include deletions. **Undo** reverses a whole reply in one step. When
   it replaces the whole diagram, the editor first asks before deleting the
   previous one, and that deletion is a separate step to undo.
 - The conversation is kept only in your browser (per diagram), so it
@@ -240,6 +241,16 @@ accident.
 
 A local server that needs no key (vLLM, LM Studio) only needs the base URL and
 the model.
+
+### Behind a proxy
+
+The assistant's replies are streamed (newline-delimited JSON, one event per
+step), so the editor can show progress during a reply that may take a
+minute. The response sets `X-Accel-Buffering: no`, which stops nginx from
+buffering it. A proxy that buffers anyway only delays the progress display:
+everything arrives at the end and the editor carries on as before. The
+request keeps one server thread busy for the whole reply, as it did before
+streaming.
 
 ### Anthropic (paid)
 

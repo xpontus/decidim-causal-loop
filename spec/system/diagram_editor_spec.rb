@@ -423,6 +423,58 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         expect(page).to have_no_css(".cl-msg--user")
       end
 
+      context "when it takes a while" do
+        let(:reply) { "Built a new diagram." }
+        # Pauses before the last tool call, so the spec can look at the panel
+        # and the canvas while the reply is still streaming.
+        let(:fake_agent_class) do
+          Class.new do
+            def initialize(*) = nil
+
+            def name = "fake"
+
+            def run(**)
+              yield "create_nodes", { "titles" => %w(Tourists Crowding) }
+              sleep 3
+              yield "create_links", { "links" => [{ "source" => "Tourists", "target" => "Crowding" }] }
+              "Built a new diagram."
+            end
+          end
+        end
+
+        # Rails runs ActionController::Live actions inline whenever its test
+        # helpers are loaded (actionpack's test_case.rb), which would deliver
+        # the whole stream at once. Browser specs share one database
+        # connection between threads, so real threads are safe here.
+        around do |example|
+          ActionController::Live.alias_method :inline_controller_thread, :new_controller_thread
+          ActionController::Live.define_method(:new_controller_thread) do |&block|
+            Thread.new do
+              Thread.current.abort_on_exception = true
+              block.call
+            end
+          end
+          example.run
+        ensure
+          ActionController::Live.alias_method :new_controller_thread, :inline_controller_thread
+          ActionController::Live.send(:private, :new_controller_thread)
+        end
+
+        it "shows each step and draws its changes before the reply is finished" do
+          find_by_id("cl-chat-input").set("Build it")
+          click_on "Send"
+
+          expect(page).to have_css(".cl-msg--pending", text: "Added 2 variables")
+          expect(page).to have_no_css(".cl-msg--assistant", text: reply)
+          expect(canvas_labels).to eq(%w(Crowding Tourists))
+
+          expect(page).to have_css(".cl-msg--assistant", text: reply, wait: 10)
+          expect(editor_script("return c.cy.edges().length;")).to eq(1)
+          click_on "Undo"
+          eventually { nodes.none? }
+        end
+      end
+
       context "when it replaces the diagram" do
         let(:existing_nodes) { [node("Old idea", 100, 100)] }
         let(:tool_calls) do

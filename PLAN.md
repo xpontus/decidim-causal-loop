@@ -36,7 +36,7 @@ Rails engine  Decidim::CausalLoop::Engine  (public side)
     LinksController          POST/PATCH/DELETE  links
     OperationsController     POST /operations   batches of update/delete/restore (undo/redo)
     ImportsController        POST /import       load a diagram file, replace or add
-    ConversationsController  POST /agent        the AI assistant
+    ConversationsController  POST /agent        the AI assistant (JSON, or NDJSON stream of progress)
       │
       ├── AnthropicAgent         (paid, Anthropic API)
       └── OpenaiCompatibleAgent  (OpenAI, OpenRouter, TensorX, vLLM, ...)
@@ -212,6 +212,7 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 | A new route 404s in development | Engine routes don't reload; restart the server. |
 | A link with `target="_blank"` goes to a "you are leaving the site" page | Decidim rewrites every `target="_blank"` link to `/link?external_url=…`, even internal ones. Use plain links. |
 | A `keydown` listener on `document` never sees Escape | The editor's key handler runs in the capture phase and stops Escape. Register other Escape listeners in the capture phase too. |
+| A streamed response arrives all at once in specs | Loading Rails' test helpers makes `ActionController::Live` run actions inline (actionpack `test_case.rb`). The streaming system spec swaps real threads back in. In development and production it streams. |
 | A trashed component is still reachable by URL | Decidim's router finds trashed components (`with_deleted`) and leaves hiding them to each component. See Permissions. |
 
 ---
@@ -256,11 +257,12 @@ Also done: **Diagram help** panel; **integration specs** for the CoP site
 unreachable Editors screen, missing translations and readable trashed
 components.
 
-6. **Streaming AI replies.** Show the reply as it is written instead of
-   "Thinking…" for up to a minute. Needs a streaming response (SSE or
-   ActionController::Live) that also reports tool calls as they happen, and
-   streaming support in each provider. Check the complexity before going
-   deep.
+6. **Streaming AI replies.** ✅ As progress, not text: the agent endpoint
+   streams NDJSON (ActionController::Live) with a "progress" event after each
+   tool call, carrying that call's changes, then "done" or "error". The
+   editor shows the steps and draws the changes as they come, and records
+   the reply as one undo step. Streaming the reply's words was skipped: it
+   needs streaming code per provider, and the replies are a few sentences.
 
 **Marcello:** deploying to the Rurbanive CoP Decidim instance, and Decidim
 integration (search, activity feed, linking from proposals). First: which

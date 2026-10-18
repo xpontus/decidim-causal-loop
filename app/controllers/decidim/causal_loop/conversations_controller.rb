@@ -3,6 +3,8 @@
 module Decidim
   module CausalLoop
     class ConversationsController < CausalLoop::ApplicationController
+      include ActionController::Live
+
       before_action :authenticate_user!
       before_action :require_edit_permission!
 
@@ -10,6 +12,13 @@ module Decidim
       # accepted. A forged "system" or "tool" turn could otherwise override the
       # system prompt or fake a tool result.
       HISTORY_ROLES = %w(user assistant).freeze
+      STREAM_TYPE = "application/x-ndjson"
+      # How progress reports name each kind of change, as [verb, noun].
+      PROGRESS_WORDS = {
+        "add_node" => %w(Added variable), "update_node" => %w(Renamed variable),
+        "remove_node" => %w(Deleted variable), "add_link" => %w(Added link),
+        "update_link" => %w(Changed link), "remove_link" => %w(Deleted link)
+      }.freeze
 
       def create
         message = params[:message].to_s.strip
@@ -25,34 +34,87 @@ module Decidim
           return render json: { error: AgentProviders.unconfigured_message }, status: :service_unavailable
         end
 
-        @nodes   = Node.where(decidim_component_id: current_component.id).to_a
-        @links   = Link.where(decidim_component_id: current_component.id).to_a
-        @actions = []
-        @pending_clear_ids = []
-
         messages = history + [{ role: "user", content: message }]
-        reply    = agent.run(system: system_prompt, messages: messages, tools: tool_definitions) do |name, input|
-          execute_tool(name, input)
-        end
+        return stream_conversation(agent, messages) if stream_requested?
 
-        render json: {
-          reply:    reply,
-          actions:  @actions,
-          provider: agent.name,
-          history:  messages + [{ role: "assistant", content: reply }]
-        }
-      rescue AgentProviders::ConfigurationError => e
-        render json: { error: e.message }, status: :service_unavailable
-      rescue OpenaiCompatibleAgent::Error => e
-        render json: { error: e.message }, status: :bad_gateway
-      rescue Anthropic::Errors::APIError => e
-        render json: { error: "Anthropic API error: #{e.message}" }, status: :bad_gateway
-      rescue => e
-        Rails.logger.error "ConversationsController error: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
-        render json: { error: "Unexpected error: #{e.message}" }, status: :internal_server_error
+        render json: converse(agent, messages)
+      rescue StandardError => e
+        error, status = error_response(e)
+        render json: { error: }, status:
       end
 
       private
+
+      # The editor asks for a stream (Accept: application/x-ndjson), so it can
+      # show what the assistant is doing and draw its changes as they happen,
+      # instead of waiting up to a minute for the whole reply. Each line is
+      # one JSON event: "progress" after each tool call, with the changes it
+      # made, then "done" with the reply, or "error". If a proxy holds the
+      # stream back, the editor gets all the lines at once and still works.
+      def stream_requested?
+        request.headers["Accept"].to_s.include?(STREAM_TYPE)
+      end
+
+      def stream_conversation(agent, messages)
+        response.headers["Content-Type"] = STREAM_TYPE
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Accel-Buffering"] = "no" # tells nginx not to buffer
+        response.headers["Last-Modified"] = Time.now.httpdate # keeps Rack::ETag from buffering
+        result = converse(agent, messages) { |event| write_event(event) }
+        write_event(result.merge(type: "done"))
+      rescue StandardError => e
+        write_event(type: "error", error: error_response(e).first)
+      ensure
+        response.stream.close
+      end
+
+      def write_event(event)
+        response.stream.write("#{event.to_json}\n")
+      end
+
+      # Runs the agent over the diagram. With a block, reports progress after
+      # every tool call.
+      def converse(agent, messages)
+        @nodes = Node.where(decidim_component_id: current_component.id).to_a
+        @links = Link.where(decidim_component_id: current_component.id).to_a
+        @actions = []
+        @pending_clear_ids = []
+
+        reply = agent.run(system: system_prompt, messages: messages, tools: tool_definitions) do |name, input|
+          before = @actions.size
+          result = execute_tool(name, input)
+          if block_given?
+            changes = @actions[before..]
+            yield({ type: "progress", text: progress_text(name, changes), actions: changes })
+          end
+          result
+        end
+
+        { reply:, actions: @actions, provider: agent.name, history: messages + [{ role: "assistant", content: reply }] }
+      end
+
+      # What a tool call did, for the chat panel: "Added 12 variables".
+      def progress_text(name, changes)
+        counts = changes.map { |a| a[:type] }.tally
+        done = PROGRESS_WORDS.filter_map do |type, (verb, noun)|
+          "#{verb} #{counts[type]} #{noun}#{"s" unless counts[type] == 1}" if counts[type]
+        end
+        return done.join(", ") if done.any?
+
+        { "list_graph" => "Read the diagram", "find_loops" => "Found the loops",
+          "clear_diagram" => "Set the old diagram aside" }.fetch(name, "Worked on the diagram")
+      end
+
+      def error_response(error)
+        case error
+        when AgentProviders::ConfigurationError then [error.message, :service_unavailable]
+        when OpenaiCompatibleAgent::Error then [error.message, :bad_gateway]
+        when Anthropic::Errors::APIError then ["Anthropic API error: #{error.message}", :bad_gateway]
+        else
+          Rails.logger.error "ConversationsController error: #{error.message}\n#{error.backtrace&.first(5)&.join("\n")}"
+          ["Unexpected error: #{error.message}", :internal_server_error]
+        end
+      end
 
       # The agent's tools create, update and delete nodes and links, so it needs
       # the same permission as the nodes and links endpoints. The JSON key is

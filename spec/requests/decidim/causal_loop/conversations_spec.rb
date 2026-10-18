@@ -157,6 +157,49 @@ module Decidim::CausalLoop
           expect(response.parsed_body["actions"]).to include("type" => "confirm_clear", "node_ids" => old_ids)
         end
       end
+
+      describe "streaming" do
+        let(:agent) { double(name: "fake") }
+
+        before { allow_any_instance_of(ConversationsController).to receive(:build_agent).and_return(agent) } # rubocop:disable RSpec/AnyInstance
+
+        def stream_message
+          post agent_path, params: params.to_json,
+                           headers: { "CONTENT_TYPE" => "application/json", "ACCEPT" => "application/x-ndjson" }
+          response.body.lines.map { |line| JSON.parse(line) }
+        end
+
+        it "reports each tool call with its changes, then the reply" do
+          allow(agent).to receive(:run) do |**, &execute_tool|
+            execute_tool.call("list_graph", {})
+            execute_tool.call("create_nodes", { "titles" => %w(Tourists Crowding) })
+            execute_tool.call("create_links", { "links" => [{ "source" => "Tourists", "target" => "Crowding" }] })
+            "Built it."
+          end
+
+          events = stream_message
+
+          expect(response.media_type).to eq("application/x-ndjson")
+          expect(events.pluck("type")).to eq(%w(progress progress progress done))
+          expect(events.first(3).pluck("text")).to eq(["Read the diagram", "Added 2 variables", "Added 1 link"])
+          expect(events[1]["actions"].pluck("title")).to eq(%w(Tourists Crowding))
+          expect(events.last).to include("reply" => "Built it.", "provider" => "fake")
+          expect(events.last["actions"].size).to eq(3)
+        end
+
+        it "ends with an error event if the agent fails midway, keeping what it did" do
+          allow(agent).to receive(:run) do |**, &execute_tool|
+            execute_tool.call("create_node", { "title" => "Tourists" })
+            raise OpenaiCompatibleAgent::Error, "Ollama returned 500"
+          end
+
+          events = stream_message
+
+          expect(events.pluck("type")).to eq(%w(progress error))
+          expect(events.last["error"]).to eq("Ollama returned 500")
+          expect(Node.pluck(:title)).to eq(["Tourists"])
+        end
+      end
     end
   end
 end
