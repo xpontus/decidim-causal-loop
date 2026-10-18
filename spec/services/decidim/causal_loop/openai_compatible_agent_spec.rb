@@ -109,6 +109,13 @@ module Decidim::CausalLoop
         expect { agent.run(system: "sys", messages: [], tools:) { "" } }
           .to raise_error(OpenaiCompatibleAgent::Error, /openrouter.ai returned 401.*invalid key/)
       end
+
+      it "raises an Error when the provider does not answer in time" do
+        stub_request(:post, endpoint).to_raise(Net::ReadTimeout)
+
+        expect { agent.run(system: "sys", messages: [], tools:) { "" } }
+          .to raise_error(OpenaiCompatibleAgent::Error, /openrouter.ai did not respond within 180 seconds/)
+      end
     end
 
     describe ".available?" do

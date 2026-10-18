@@ -161,6 +161,9 @@ module Decidim
         {}
       end
 
+      # Extra headers are merged last, so they can replace Content-Type and
+      # Authorization. That is deliberate: some endpoints authenticate with a
+      # different scheme, and only the site administrator sets these values.
       def request_headers
         headers = { "Content-Type" => "application/json" }
         headers["Authorization"] = "Bearer #{@api_key}" if @api_key
@@ -189,6 +192,8 @@ module Decidim
         message
       rescue Errno::ECONNREFUSED, SocketError, Net::OpenTimeout
         raise Error, unreachable_message
+      rescue Net::ReadTimeout
+        raise Error, "#{provider_label} did not respond within #{self.class::READ_TIMEOUT} seconds"
       rescue JSON::ParserError => e
         raise Error, "Invalid JSON from #{provider_label}: #{e.message}"
       end

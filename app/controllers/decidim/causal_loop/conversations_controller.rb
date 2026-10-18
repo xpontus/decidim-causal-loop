@@ -6,9 +6,17 @@ module Decidim
       before_action :authenticate_user!
       before_action :require_edit_permission!
 
+      # The history comes from the browser, so only conversation turns are
+      # accepted. A forged "system" or "tool" turn could otherwise override the
+      # system prompt or fake a tool result.
+      HISTORY_ROLES = %w(user assistant).freeze
+
       def create
         message = params[:message].to_s.strip
-        history = Array(params[:history]).map { |m| { role: m[:role].to_s, content: m[:content].to_s } }
+        history = Array(params[:history]).filter_map do |m|
+          role = m[:role].to_s
+          { role:, content: m[:content].to_s } if HISTORY_ROLES.include?(role)
+        end
 
         return render json: { error: "Message cannot be blank" }, status: :bad_request if message.blank?
 
