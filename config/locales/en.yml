@@ -3,7 +3,7 @@ en:
   decidim:
     components:
       causal_loop:
-        name: CausalLoop
+        name: RUSIF Causal Loop Diagram
     causal_loop:
       admin:
         editors:

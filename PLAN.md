@@ -174,7 +174,7 @@ bin/rails server
 Seeds create `admin@example.org` / `decidim123456789`.
 
 Add the component to a participatory space through
-**Admin → (space) → Components → Add component → CausalLoop**, then publish
+**Admin → (space) → Components → Add component → RUSIF Causal Loop Diagram**, then publish
 it.
 
 ### Running the specs
@@ -268,8 +268,6 @@ Decidim version the CoP site runs. The gemspec pins `decidim-core` to exactly
 0.31.3, so any other version needs the pin loosened and CI run against it.
 
 **Open questions:**
-- The component is listed as "CausalLoop" under Add component (from
-  `config/locales/en.yml`); probably should read "Causal loop diagram".
 - The README's Security section still has a placeholder address.
 - Interface text is English only; translations would need the strings moved
   into `config/locales`.

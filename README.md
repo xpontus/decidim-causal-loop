@@ -1,10 +1,11 @@
 # Decidim::CausalLoop
 
 A [Decidim](https://decidim.org) component for drawing **causal loop
-diagrams** together: variables, the signed (+/−) links between them, and the
-feedback loops they form. Add it to any participatory space; participants
-can view the diagram, and the people an admin chooses can edit it, with an
-optional AI assistant.
+diagrams** together, part of the RUSIF framework. It appears in Decidim's
+admin as **RUSIF Causal Loop Diagram**. A diagram shows variables, the
+signed (+/−) links between them, and the feedback loops they form. Add it to
+any participatory space; participants can view the diagram, and the people
+an admin chooses can edit it, with an optional AI assistant.
 
 See [Installation](#installation) to add it to a Decidim site.
 
@@ -162,7 +163,7 @@ Without the `npm install`, building the assets fails with "Can't resolve
 'cytoscape'".
 
 To add a diagram, an admin opens a participatory space's **Components**,
-chooses **Add component → CausalLoop**, names it and publishes it. **Manage**
+chooses **Add component → RUSIF Causal Loop Diagram**, names it and publishes it. **Manage**
 on the component opens **Diagram editors**, where admins choose which
 participants may edit it; organization admins and the space's admins always
 can. Components in the trash are hidden, diagram included, until restored.

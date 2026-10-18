@@ -24,7 +24,7 @@ describe "Admin manages a diagram" do # rubocop:disable RSpec/DescribeClass -- a
   it "adds and publishes the component, and grants and revokes edit access" do
     visit decidim_admin_participatory_processes.components_path(participatory_process)
     click_on "Add component"
-    click_on "CausalLoop"
+    click_on "RUSIF Causal Loop Diagram"
     fill_in "component_name_en", with: "Island tourism"
     within("form.new_component") { click_on "Add component" }
     expect(page).to have_content("Component created successfully")
