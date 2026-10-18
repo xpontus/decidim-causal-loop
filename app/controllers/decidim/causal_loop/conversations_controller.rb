@@ -14,7 +14,7 @@ module Decidim
 
         agent = build_agent
         unless agent
-          return render json: { error: unconfigured_message }, status: :service_unavailable
+          return render json: { error: AgentProviders.unconfigured_message }, status: :service_unavailable
         end
 
         @nodes   = Node.where(decidim_component_id: current_component.id).to_a
@@ -32,7 +32,9 @@ module Decidim
           provider: agent.name,
           history:  messages + [{ role: "assistant", content: reply }]
         }
-      rescue OllamaAgent::Error => e
+      rescue AgentProviders::ConfigurationError => e
+        render json: { error: e.message }, status: :service_unavailable
+      rescue OpenaiCompatibleAgent::Error => e
         render json: { error: e.message }, status: :bad_gateway
       rescue Anthropic::Errors::APIError => e
         render json: { error: "Anthropic API error: #{e.message}" }, status: :bad_gateway
@@ -52,52 +54,8 @@ module Decidim
         render json: { error: "Not authorized" }, status: :forbidden
       end
 
-      # Resolution order: Rails credentials, then ENV, then a local git-ignored file.
-      # The file exists so a paid key can live on one machine only:
-      #   echo "sk-ant-..." > config/anthropic_api_key
-      def anthropic_api_key
-        return @anthropic_api_key if defined?(@anthropic_api_key)
-
-        @anthropic_api_key =
-          Rails.application.credentials.dig(:anthropic, :api_key).presence ||
-          ENV["ANTHROPIC_API_KEY"].presence ||
-          anthropic_api_key_from_file
-      end
-
-      def anthropic_api_key_from_file
-        path = Rails.root.join("config", "anthropic_api_key")
-        return nil unless File.exist?(path)
-
-        File.read(path).strip.presence
-      end
-
-      # Provider selection. CAUSAL_LOOP_AI_PROVIDER forces one ("anthropic" or
-      # "ollama"); otherwise prefer a configured Anthropic key and fall back to a
-      # local Ollama server, so the module is usable with no paid key at all.
       def build_agent
-        case ENV["CAUSAL_LOOP_AI_PROVIDER"].to_s.downcase
-        when "anthropic" then anthropic_agent
-        when "ollama"    then ollama_agent
-        else                  anthropic_agent || ollama_agent
-        end
-      end
-
-      def anthropic_agent
-        return nil unless AnthropicAgent.available?(api_key: anthropic_api_key)
-
-        AnthropicAgent.new(api_key: anthropic_api_key)
-      end
-
-      def ollama_agent
-        return nil unless OllamaAgent.available?
-
-        OllamaAgent.new
-      end
-
-      def unconfigured_message
-        "AI assistant is not configured. Either set ANTHROPIC_API_KEY (or write the key to " \
-          "config/anthropic_api_key), or run a local Ollama server for free: " \
-          "brew install ollama && ollama pull qwen3"
+        AgentProviders.build
       end
 
       def execute_tool(name, input)

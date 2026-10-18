@@ -21,8 +21,9 @@ spec/decidim_dummy_app
 # default development application
 development_app
 
-# Local AI key (never commit)
+# Local AI keys (never commit)
 config/anthropic_api_key
+config/openai_api_key
 
 # This is a gem: the host app owns dependency resolution
 Gemfile.lock

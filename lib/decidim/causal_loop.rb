@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "anthropic"
 require "decidim/causal_loop/admin"
 require "decidim/causal_loop/engine"
 require "decidim/causal_loop/admin_engine"

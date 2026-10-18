@@ -31,8 +31,9 @@ Rails engine  Decidim::CausalLoop::Engine
     DiagramsController GET  the editor page
     ConversationsController POST /agent
       │
-      ├── AnthropicAgent   (paid, Anthropic API)
-      └── OllamaAgent      (free, local Ollama)
+      ├── AnthropicAgent         (paid, Anthropic API)
+      └── OpenaiCompatibleAgent  (OpenAI, OpenRouter, TensorX, vLLM, ...)
+            └── OllamaAgent      (free, local Ollama)
            both run the same tool loop over the same tool set
       ▼
 PostgreSQL
@@ -55,20 +56,23 @@ the admin panel under the component's **Editors** screen.
 
 ### AI assistant
 
-Optional. Two interchangeable providers behind one interface
-(`run(system:, messages:, tools:) { |name, input| ... }`):
+Optional. Interchangeable providers behind one interface
+(`run(system:, messages:, tools:) { |name, input| ... }`), chosen by
+`AgentProviders`:
 
-- **Ollama** — free, local, no key. Uses the OpenAI-compatible
-  `/v1/chat/completions` endpoint, translating this module's
-  Anthropic-shaped tool definitions into function tools and OpenAI
-  `tool_calls` back again. Tool-call arguments arrive as a JSON *string*
-  and are parsed.
-- **Anthropic** — paid. Native tool-use blocks.
+- **OpenAI-compatible** (`OpenaiCompatibleAgent`) — any endpoint speaking the
+  OpenAI chat completions dialect (OpenAI, OpenRouter, TensorX, Groq, vLLM…).
+  Translates this module's Anthropic-shaped tool definitions into function
+  tools and OpenAI `tool_calls` back again. Tool-call arguments arrive as a
+  JSON *string* and are parsed. Base URL, model, key, extra body params and
+  extra headers are configurable.
+- **Ollama** (`OllamaAgent`) — free, local, no key. A subclass of the
+  OpenAI-compatible agent that adds model discovery.
+- **Anthropic** (`AnthropicAgent`) — paid. Native tool-use blocks.
 
-Selection: an Anthropic key if configured, else a reachable Ollama, else a
-503 explaining how to set either up. `CAUSAL_LOOP_AI_PROVIDER` forces one.
-See the README for configuration, including the git-ignored
-`config/anthropic_api_key` file.
+Selection: the first configured of Anthropic, OpenAI-compatible, Ollama; else a
+503 explaining how to set one up. `CAUSAL_LOOP_AI_PROVIDER` forces one. See the
+README for configuration, including the git-ignored key files.
 
 ### Example diagram
 
@@ -163,17 +167,12 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 
 - **More AI providers.** The agent interface is deliberately small —
   `run(system:, messages:, tools:)` yielding tool calls — so a provider is one
-  class and a translation of the tool schema. Worth adding:
-  - any **OpenAI-compatible** endpoint (OpenAI, Groq, Mistral, Together,
-    OpenRouter, vLLM, LM Studio). `OllamaAgent` already speaks this dialect,
-    so this is mostly a configurable base URL, model and API key rather than
-    new code.
+  class plus an entry in `AgentProviders::PROVIDERS`. Any OpenAI-compatible
+  endpoint is already covered by `OpenaiCompatibleAgent`. Still worth adding:
   - **Google Gemini**, which uses a different shape (`functionDeclarations`,
     `functionCall` / `functionResponse` parts) and so needs its own adapter.
   - **Azure OpenAI**, same dialect as OpenAI but different auth and URL layout.
-  A provider registry keyed by `CAUSAL_LOOP_AI_PROVIDER` would replace the
-  current if/else selection, and providers should declare whether they support
-  tool calling — some small local models do not, and should degrade to
+  Providers should also declare whether they support tool calling — some small local models do not, and should degrade to
   answering questions rather than failing silently.
 - Automatic loop detection: find cycles, label them reinforcing or balancing,
   surface them in the UI.

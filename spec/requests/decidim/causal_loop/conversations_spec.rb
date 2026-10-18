@@ -3,7 +3,7 @@
 require "spec_helper"
 
 module Decidim::CausalLoop
-  describe "AI agent conversations", type: :request do
+  describe "AI agent conversations" do
     let(:organization) { create(:organization) }
     let(:participatory_space) { create(:participatory_process, :with_steps, organization:) }
     let(:component) { create(:causal_loop_component, :published, participatory_space:) }
