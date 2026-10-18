@@ -172,19 +172,53 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 
 ## Next actions
 
-- **Deploy to the Rurbanive CoP Decidim.** Add the causal loop editor to the
-  Rurbanive community-of-practice Decidim instance.
-- **Undo/redo.** See the plan below.
-- **`find_loops` tool for the AI assistant.** Asked to "list all the loops",
-  gpt-oss:20b reasoned for 80 s with no tool, and models are unreliable at
-  finding cycles anyway. Find every cycle on the server instead (a DFS is
-  fine at this size; Johnson's algorithm if diagrams grow), label each R or B
-  by counting negative links, and let the model only explain the result.
-  This also removes the README's "does not find loops" limitation.
-- **Stray clicks flip link signs.** A single click on a link toggles its
-  polarity, and it is easy to do by accident (it happened while taking
-  screenshots). Consider requiring a double-click, a modifier key, or a
-  small +/− control on the selected link.
+In this order. Each step adds specs for what it changes.
+
+1. **Quick wins**
+   - **Long titles.** Split long titles at word or CamelCase boundaries
+     ("LongestNameEver" → "Longest\nNameEver"), and grow the node box to fit
+     the text instead of overflowing it.
+   - **Polarity flips.** A single click on a link toggles +/−, which is easy
+     to do by accident (it happened while taking screenshots). Flash the link
+     and show a toast ("Mining → IslandIncome is now −  [Undo]"). The Undo
+     later moves into the general undo system (step 4).
+   - **Clear chat** button in the AI panel header.
+   - **Keep the AI conversation across reloads.** Start with browser storage
+     (per browser, per diagram). Server-side storage per user and diagram is
+     the later option, if it should follow people across devices.
+2. **Editor specs.** System specs (Capybara with headless Chrome, already
+   provided by decidim-dev and set up in CI) for the editor's JavaScript:
+   add, rename, move and delete nodes; links and polarity; auto-layout; the
+   AI panel with a stubbed agent; the clear-diagram dialog. A safety net
+   before the undo/redo refactor.
+3. **Loops.**
+   - **`find_loops` tool for the AI assistant.** Asked to "list all the
+     loops", gpt-oss:20b reasoned for 80 s with no tool, and models are
+     unreliable at finding cycles anyway. Find every cycle on the server (a
+     DFS is fine at this size; Johnson's algorithm if diagrams grow), label
+     each R or B by counting negative links, and let the model only explain
+     the result. Removes the README's "does not find loops" limitation.
+   - **Loops in the editor.** A panel listing the loops with R/B labels;
+     selecting one highlights its nodes and links on the canvas. Reuses the
+     same cycle detection.
+4. **Undo/redo.** See the plan below.
+5. **Save to file and load from file.** A full-fidelity file (titles,
+   positions, sizes, fonts, polarity, bends), unlike today's exports, and an
+   import that replaces the diagram or adds to it. After undo/redo so that a
+   load can be undone. Today's backups use `../backups/restore.rb`, outside
+   the repo.
+6. **Streaming AI replies.** Show the reply as it is written instead of
+   "Thinking…" for up to a minute. Needs a streaming response (SSE or
+   ActionController::Live) that also reports tool calls as they happen, and
+   streaming support in each provider. Check the complexity before going
+   deep.
+
+**Marcello:** deploying to the Rurbanive CoP Decidim instance, and Decidim
+integration (search, activity feed, linking from proposals).
+
+**Parked:**
+- More AI providers (Gemini, Azure OpenAI): until one is needed.
+- Real-time collaboration: until we know what Decidim's conventions are.
 
 ---
 
@@ -328,7 +362,7 @@ recommended, since they also cover the server side.
 
 ---
 
-## Possible next steps
+## Parked: details
 
 - **More AI providers.** The agent interface is deliberately small —
   `run(system:, messages:, tools:)` yielding tool calls — so a provider is one
@@ -339,10 +373,3 @@ recommended, since they also cover the server side.
   - **Azure OpenAI**, same dialect as OpenAI but different auth and URL layout.
   Providers should also declare whether they support tool calling — some small local models do not, and should degrade to
   answering questions rather than failing silently.
-- Automatic loop detection: find cycles, label them reinforcing or balancing,
-  surface them in the UI.
-- Real-time collaboration, so several participants can edit one diagram at once.
-- Streaming AI replies instead of request/response.
-- Decidim resource registration, so diagrams can be linked from proposals and
-  appear in search and the activity feed.
-- Specs for the editor and the two AI providers; CI currently runs rspec only.
