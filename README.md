@@ -7,6 +7,103 @@
 CausalLoop will be available as a Component for a Participatory
 Space.
 
+## What it can and cannot do
+
+### What it can do
+
+- **One diagram per component.** Each Causal Loop component in a
+  participatory space holds one diagram. For several diagrams, add several
+  components.
+- **Variables and causal links.** Add, rename, move and delete variables
+  (nodes). Draw directed links between them and mark each as positive (+) or
+  negative (−). Resize nodes, change their font size, and bend links so they
+  don't overlap.
+- **Saved as you go.** Every change is saved to the server as you
+  make it. There is no separate save step.
+- **Edit and view permissions.** Organization admins, admins of the
+  participatory space, and users granted access under the component's
+  **Editors** screen can edit. Everyone else who can see the component can
+  view, zoom and export it.
+- **Export.** Download the diagram as JSON or GraphML, save it as a PNG, or
+  print it / save it as a PDF.
+- **Optional AI assistant.** Editors can ask an AI to add, rename and delete
+  variables and links, change polarity, or explain how the diagram works (see
+  [AI assistant](#ai-assistant)).
+
+### What it cannot do
+
+**Analysis**
+
+- It does not find loops or label them as reinforcing (R) or balancing (B).
+  Spotting the loops and counting the negative links is left to the people
+  using the diagram.
+- Links can only be positive or negative. There is no way to mark delays,
+  link strength, or uncertain polarity.
+- It does not simulate the system or compute any values. It is a drawing
+  tool, not a system-dynamics model.
+
+**Collaboration**
+
+- No real-time collaboration. When several editors work at once, nobody sees
+  anyone else's changes until they reload the page. If two people change the
+  same thing, the last save wins.
+- No undo, no version history, and no record of who changed what. Deleting
+  a variable deletes all of its links immediately, without asking for
+  confirmation.
+- Editing rights cover the whole diagram. An editor can change or delete
+  anything, including other people's work. Participants without edit rights
+  cannot suggest changes or comment on the diagram.
+
+**Content**
+
+- Each variable has only a title. There is nowhere to add a description or
+  notes, and links cannot carry text labels.
+- Every node looks the same. You can't colour, group or categorise
+  variables.
+- New links always start as positive. Clicking a link switches its polarity,
+  so a stray click can flip a sign.
+- Diagrams cannot be imported. The JSON and GraphML exports leave out
+  layout details: GraphML has no positions, and neither format includes node
+  sizes, fonts or link curves. Use them for analysis in other tools, not as
+  backups.
+
+**Decidim integration**
+
+- Diagrams are not connected to the rest of Decidim. They don't appear in
+  search, the activity feed, notifications or statistics, and they can't be
+  linked from proposals or other content.
+- Not multilingual. The editor's interface text is English only, and
+  variable titles are stored in a single language rather than as Decidim
+  translatable fields.
+
+**Devices and accessibility**
+
+- Built for mouse and keyboard. Drawing links with the <kbd>C</kbd> key,
+  renaming existing variables (double-click) and bending links all need a
+  mouse. On touch devices, expect to be able to view and pan, but not to
+  edit fully.
+- The diagram is drawn on a canvas, so screen readers cannot read it, and
+  there is no text-only view of the variables and links.
+
+**AI assistant**
+
+- The site administrator must set it up: an Anthropic API key, an
+  OpenAI-compatible endpoint, or an Ollama server (see
+  [AI assistant](#ai-assistant)). It is available only to editors.
+- It can add, rename and delete variables and links and change polarity. It
+  cannot move or resize nodes or bend links.
+- Its changes take effect immediately, without asking for confirmation, and
+  can include deletions.
+- The conversation is not saved. Reloading the page clears it.
+- Each request is limited to 10 rounds of tool calls, so a large request may
+  stop part-way through.
+- The diagram's contents and the conversation are sent to the configured
+  provider: Anthropic's API, the OpenAI-compatible endpoint (which may be a
+  third party such as OpenRouter), or the Ollama server. They stay on your own
+  infrastructure only if that server is yours.
+- Small local models are much less reliable than hosted ones. The Anthropic
+  provider has not yet been tested against the live API.
+
 ## Installation
 
 Add this line to your application's Gemfile:

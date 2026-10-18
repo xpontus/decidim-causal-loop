@@ -163,6 +163,13 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 
 ---
 
+## Next actions
+
+- **Deploy to the Rurbanive CoP Decidim.** Add the causal loop editor to the
+  Rurbanive community-of-practice Decidim instance.
+
+---
+
 ## Possible next steps
 
 - **More AI providers.** The agent interface is deliberately small —
