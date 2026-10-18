@@ -107,6 +107,13 @@ The agent calls the same database operations the frontend uses
 `delete_link`, `list_graph`) and returns a list of actions the Stimulus
 controller applies to the live Cytoscape graph.
 
+It also has batch tools — `create_nodes`, `create_links` (nodes referenced by
+title or ID) and `clear_diagram` — because small local models such as
+gpt-oss make exactly one tool call per round. With single-item tools only, a
+12-node, 23-link diagram needed ~40 rounds and hit the cap after 3 nodes; with
+batch tools it takes 3–4. The model cannot choose node positions: it placed
+nodes 100 px apart, overlapping them, so placement is always automatic.
+
 ---
 
 ## Development setup

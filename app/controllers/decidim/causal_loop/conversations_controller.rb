@@ -83,17 +83,19 @@ module Decidim
           title = input["title"].to_s.strip
           return "Error: title is required" if title.blank?
 
-          pos  = auto_position
-          node = Node.create!(
-            title:                title,
-            position_x:           input["position_x"]&.to_f || pos[:x],
-            position_y:           input["position_y"]&.to_f || pos[:y],
-            decidim_component_id: current_component.id
-          )
-          @nodes << node
-          @actions << { type: "add_node", id: node.id, title: node.title,
-                        position_x: node.position_x, position_y: node.position_y }
+          node = add_node(title)
           { id: node.id, title: node.title }.to_json
+
+        when "create_nodes"
+          titles = Array(input["titles"]).map { |t| t.to_s.strip }.compact_blank
+          return "Error: titles must be a non-empty list" if titles.empty?
+
+          titles.map { |title| add_node(title).then { |node| { id: node.id, title: node.title } } }.to_json
+
+        when "clear_diagram"
+          count = @nodes.size
+          @nodes.dup.each { |node| remove_node(node) }
+          "Deleted all #{count} nodes and their links"
 
         when "update_node"
           node  = find_node(input["id"])
@@ -110,16 +112,7 @@ module Decidim
           node = find_node(input["id"])
           return "Error: node not found" unless node
 
-          Link.where(decidim_component_id: current_component.id)
-              .where("source_node_id = ? OR target_node_id = ?", node.id, node.id)
-              .each do |l|
-                @actions << { type: "remove_link", id: l.id }
-                @links.delete_if { |x| x.id == l.id }
-                l.destroy!
-              end
-          node.destroy!
-          @nodes.delete_if { |n| n.id == node.id }
-          @actions << { type: "remove_node", id: node.id }
+          remove_node(node)
           "Deleted node #{node.id} (\"#{node.title}\")"
 
         when "create_link"
@@ -130,16 +123,13 @@ module Decidim
           return "Error: source node not found" unless @nodes.any? { |n| n.id == source_id }
           return "Error: target node not found" unless @nodes.any? { |n| n.id == target_id }
 
-          link = Link.create!(
-            source_node_id:       source_id,
-            target_node_id:       target_id,
-            polarity:             polarity,
-            decidim_component_id: current_component.id
-          )
-          @links << link
-          @actions << { type: "add_link", id: link.id, source_node_id: source_id,
-                        target_node_id: target_id, polarity: polarity }
-          { id: link.id }.to_json
+          { id: add_link(source_id, target_id, polarity).id }.to_json
+
+        when "create_links"
+          links = Array(input["links"]).select { |l| l.respond_to?(:to_h) }.map { |l| l.to_h.stringify_keys }
+          return "Error: links must be a non-empty list" if links.empty?
+
+          links.map { |l| create_link_by_reference(l) }.to_json
 
         when "update_link"
           link     = find_link(input["id"])
@@ -168,6 +158,73 @@ module Decidim
         "Error: #{e.message}"
       end
 
+      def add_node(title)
+        pos  = auto_position
+        node = Node.create!(title:, position_x: pos[:x], position_y: pos[:y], decidim_component_id: current_component.id)
+        @nodes << node
+        @actions << { type: "add_node", id: node.id, title: node.title,
+                      position_x: node.position_x, position_y: node.position_y }
+        node
+      end
+
+      def remove_node(node)
+        Link.where(decidim_component_id: current_component.id)
+            .where("source_node_id = ? OR target_node_id = ?", node.id, node.id)
+            .each do |l|
+              @actions << { type: "remove_link", id: l.id }
+              @links.delete_if { |x| x.id == l.id }
+              l.destroy!
+            end
+        node.destroy!
+        @nodes.delete_if { |n| n.id == node.id }
+        @actions << { type: "remove_node", id: node.id }
+      end
+
+      def add_link(source_id, target_id, polarity)
+        link = Link.create!(source_node_id: source_id, target_node_id: target_id, polarity:,
+                            decidim_component_id: current_component.id)
+        @links << link
+        @actions << { type: "add_link", id: link.id, source_node_id: source_id,
+                      target_node_id: target_id, polarity: }
+        link
+      end
+
+      # One entry of create_links. Errors are reported per link, so one bad
+      # reference does not stop the rest of the batch.
+      def create_link_by_reference(spec)
+        source_ref = link_end(spec, "source", "from")
+        target_ref = link_end(spec, "target", "to")
+        source = resolve_node(source_ref)
+        target = resolve_node(target_ref)
+        polarity = spec["polarity"].to_s.in?(%w(positive negative)) ? spec["polarity"] : "positive"
+        return { source: source_ref, error: "source node not found; give a node title or ID as \"source\"" } unless source
+        return { target: target_ref, error: "target node not found; give a node title or ID as \"target\"" } unless target
+
+        link = add_link(source.id, target.id, polarity)
+        { id: link.id, from: source.title, to: target.title, polarity: }
+      end
+
+      # Models invent their own key names ("source_node_id", "source_node_title",
+      # "from"), so take the documented key, its short alias, or any key that
+      # starts with the documented one.
+      def link_end(spec, key, short)
+        spec[key] || spec[short] || spec.find { |k, _| k.start_with?(key) }&.last
+      end
+
+      # Small models lose track of IDs, so links may name nodes by title
+      # instead. Titles match ignoring case, spaces and punctuation, so
+      # "Island Income" finds "IslandIncome".
+      def resolve_node(ref)
+        return find_node(ref) if ref.is_a?(Integer) || ref.to_s.strip.match?(/\A\d+\z/)
+
+        key = title_key(ref)
+        key.present? && @nodes.find { |n| title_key(n.title) == key }
+      end
+
+      def title_key(title)
+        title.to_s.downcase.gsub(/[^[:alnum:]]/, "")
+      end
+
       def find_node(id)
         @nodes.find { |n| n.id == id.to_i } ||
           Node.find_by(id: id.to_i, decidim_component_id: current_component.id)
@@ -178,24 +235,36 @@ module Decidim
           Link.find_by(id: id.to_i, decidim_component_id: current_component.id)
       end
 
-      # Place new node in a spiral outward from the centroid, avoiding existing nodes
+      # Nodes default to 130x44 on the canvas; keep at least this far apart.
+      NODE_SPACING_X = 180
+      NODE_SPACING_Y = 80
+
+      # Place a new node on rings around the diagram's centre, taking the first
+      # free slot. Rings are wider than tall to match the node shape.
       def auto_position
         return { x: 300, y: 300 } if @nodes.empty?
 
         cx = @nodes.sum { |n| n.position_x.to_f } / @nodes.size
         cy = @nodes.sum { |n| n.position_y.to_f } / @nodes.size
 
-        72.times do |i|
-          angle  = i * 5 * Math::PI / 180.0
-          radius = 180 + (i / 12) * 60
-          x      = cx + Math.cos(angle) * radius
-          y      = cy + Math.sin(angle) * radius
-          next if @nodes.any? { |n| Math.hypot(n.position_x.to_f - x, n.position_y.to_f - y) < 120 }
-
-          return { x: x.round, y: y.round }
+        (1..10).each do |ring|
+          radius = ring * NODE_SPACING_Y * 1.5
+          slots  = [(2 * Math::PI * radius / NODE_SPACING_Y).floor, 8].max
+          slots.times do |i|
+            angle = 2 * Math::PI * i / slots
+            x = cx + (Math.cos(angle) * radius * 2)
+            y = cy + (Math.sin(angle) * radius)
+            return { x: x.round, y: y.round } unless position_taken?(x, y)
+          end
         end
 
         { x: (cx + rand(-250..250)).round, y: (cy + rand(-250..250)).round }
+      end
+
+      def position_taken?(pos_x, pos_y)
+        @nodes.any? do |n|
+          (n.position_x.to_f - pos_x).abs < NODE_SPACING_X && (n.position_y.to_f - pos_y).abs < NODE_SPACING_Y
+        end
       end
 
       def system_prompt
@@ -226,8 +295,13 @@ module Decidim
 
           YOUR ROLE
           - Use tools when asked to add, rename, or delete nodes and links.
-          - You may call multiple tools in sequence to complete one request.
-          - Always call list_graph first if you need to look up IDs.
+          - Work in as few tool calls as possible: use create_nodes and create_links to add
+            many at once, and clear_diagram (only when the user asks to start over or clear
+            the diagram) instead of deleting nodes one by one.
+          - create_links accepts node titles, so you can link nodes you just created without
+            looking up their IDs. The current diagram above already lists every ID.
+          - When the user approves a diagram you proposed, build all of it: every node and
+            every link, not a part of it.
           - Keep node titles short (1–4 words), starting with a capital letter.
           - After changes, briefly explain what you did and the systems logic behind it.
           - Answer questions without tools — only call tools when actually modifying the diagram.
@@ -248,12 +322,27 @@ module Decidim
             input_schema: {
               type: "object",
               properties: {
-                title:      { type: "string", description: "Short variable name, 1–4 words" },
-                position_x: { type: "number", description: "X canvas position (optional)" },
-                position_y: { type: "number", description: "Y canvas position (optional)" }
+                title: { type: "string", description: "Short variable name, 1–4 words" }
               },
               required: ["title"]
             }
+          },
+          {
+            name: "create_nodes",
+            description: "Creates several nodes at once. Prefer this to repeated create_node calls. " \
+                         "Nodes are placed automatically.",
+            input_schema: {
+              type: "object",
+              properties: {
+                titles: { type: "array", items: { type: "string" }, description: "Short variable names, 1–4 words each" }
+              },
+              required: ["titles"]
+            }
+          },
+          {
+            name: "clear_diagram",
+            description: "Deletes every node and link. Use only when the user asks to start over or clear the diagram.",
+            input_schema: { type: "object", properties: {}, required: [] }
           },
           {
             name: "update_node",
@@ -288,6 +377,30 @@ module Decidim
                                   description: "positive = same direction; negative = opposite direction" }
               },
               required: ["source_node_id", "target_node_id", "polarity"]
+            }
+          },
+          {
+            name: "create_links",
+            description: "Creates several causal links at once. Prefer this to repeated create_link calls. " \
+                         "Refer to nodes by title or by ID. Returns the result of each link; failed links " \
+                         "carry an error and the others are still created.",
+            input_schema: {
+              type: "object",
+              properties: {
+                links: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      source:   { type: "string", description: "Title or ID of the cause node" },
+                      target:   { type: "string", description: "Title or ID of the effect node" },
+                      polarity: { type: "string", enum: %w(positive negative) }
+                    },
+                    required: %w(source target polarity)
+                  }
+                }
+              },
+              required: ["links"]
             }
           },
           {

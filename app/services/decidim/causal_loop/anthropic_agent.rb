@@ -8,7 +8,6 @@ module Decidim
     # ({ name:, description:, input_schema: }) and used as-is.
     class AnthropicAgent
       DEFAULT_MODEL = "claude-opus-5"
-      MAX_ROUNDS = 10
 
       def self.available?(api_key:)
         api_key.present?
@@ -28,7 +27,7 @@ module Decidim
       def run(system:, messages:, tools:, &execute_tool)
         loop_messages = messages.dup
 
-        MAX_ROUNDS.times do
+        AgentProviders::MAX_ROUNDS.times do
           response = @client.messages.create(
             model: @model,
             max_tokens: 4096,
@@ -50,7 +49,7 @@ module Decidim
           loop_messages << { role: "user", content: results }
         end
 
-        "Done."
+        AgentProviders::INCOMPLETE_REPLY
       end
     end
   end

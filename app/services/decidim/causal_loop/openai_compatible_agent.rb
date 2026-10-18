@@ -28,7 +28,6 @@ module Decidim
     # appended to it, as every OpenAI-compatible client does.
     class OpenaiCompatibleAgent
       DEFAULT_BASE_URL = "https://api.openai.com/v1"
-      MAX_ROUNDS = 10
       OPEN_TIMEOUT = 5
       READ_TIMEOUT = 180
 
@@ -99,7 +98,7 @@ module Decidim
                         messages.map { |m| { "role" => m[:role].to_s, "content" => m[:content].to_s } }
         openai_tools = tools.map { |t| to_openai_tool(t) }
 
-        MAX_ROUNDS.times do
+        AgentProviders::MAX_ROUNDS.times do
           message = chat(loop_messages, openai_tools)
           calls = message["tool_calls"].to_a
 
@@ -121,7 +120,7 @@ module Decidim
           end
         end
 
-        "Done."
+        AgentProviders::INCOMPLETE_REPLY
       end
 
       private

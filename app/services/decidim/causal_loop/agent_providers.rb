@@ -12,6 +12,14 @@ module Decidim
     module AgentProviders
       class ConfigurationError < StandardError; end
 
+      # Tool-calling rounds per request. Small models make one tool call per
+      # round, so this must leave room for a multi-step edit.
+      MAX_ROUNDS = 25
+
+      # Returned when an agent runs out of rounds before giving a final answer.
+      INCOMPLETE_REPLY = "I stopped after #{MAX_ROUNDS} steps before finishing. The changes made so far " \
+                         "are saved. Say \"continue\" and I will carry on.".freeze
+
       PROVIDERS = {
         "anthropic" => :anthropic_agent,
         "openai" => :openai_agent,

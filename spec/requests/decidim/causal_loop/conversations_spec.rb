@@ -82,6 +82,66 @@ module Decidim::CausalLoop
                                  { role: "user", content: "Add Stress" }
                                ])
       end
+
+      describe "batch tools" do
+        let(:tool_results) { [] }
+
+        # An agent that makes the given tool calls in order, as a model would.
+        def run_tools(*calls)
+          agent = double(name: "fake")
+          allow(agent).to receive(:run) do |**, &execute_tool|
+            calls.each { |name, input| tool_results << execute_tool.call(name, input) }
+            "ok"
+          end
+          allow_any_instance_of(ConversationsController).to receive(:build_agent).and_return(agent) # rubocop:disable RSpec/AnyInstance
+
+          post_message
+          expect(response).to have_http_status(:ok)
+        end
+
+        def node_titles
+          Node.where(decidim_component_id: component.id).pluck(:title)
+        end
+
+        it "creates several nodes in one call, without overlapping them" do
+          run_tools(["create_nodes", { "titles" => %w(Fishing Tourism Mining FishStock Pollution IslandIncome) }])
+
+          nodes = Node.where(decidim_component_id: component.id).to_a
+          expect(nodes.map(&:title)).to match_array(%w(Fishing Tourism Mining FishStock Pollution IslandIncome))
+          nodes.combination(2).each do |a, b|
+            apart = (a.position_x - b.position_x).abs >= 180 || (a.position_y - b.position_y).abs >= 80
+            expect(apart).to be(true), "#{a.title} overlaps #{b.title}"
+          end
+        end
+
+        it "links nodes by title, reporting bad references without stopping the batch" do
+          run_tools(
+            ["create_nodes", { "titles" => ["Fishing", "Fish Stock"] }],
+            ["create_links", { "links" => [
+              { "source" => "fishing", "target" => "FishStock", "polarity" => "negative" },
+              { "source_node_title" => "Fish Stock", "to" => "Fishing", "polarity" => "positive" },
+              { "source" => "Tourism", "target" => "Fishing", "polarity" => "positive" }
+            ] }]
+          )
+
+          links = Link.where(decidim_component_id: component.id).map do |l|
+            [Node.find(l.source_node_id).title, Node.find(l.target_node_id).title, l.polarity]
+          end
+          expect(links).to contain_exactly(["Fishing", "Fish Stock", "negative"], ["Fish Stock", "Fishing", "positive"])
+          expect(JSON.parse(tool_results.last).last["error"]).to start_with("source node not found")
+        end
+
+        it "clears the diagram in one call" do
+          run_tools(
+            ["create_nodes", { "titles" => %w(A B) }],
+            ["create_links", { "links" => [{ "source" => "A", "target" => "B", "polarity" => "positive" }] }],
+            ["clear_diagram", {}]
+          )
+
+          expect(node_titles).to be_empty
+          expect(Link.where(decidim_component_id: component.id)).to be_empty
+        end
+      end
     end
   end
 end

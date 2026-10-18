@@ -95,8 +95,10 @@ Space.
 - Its changes take effect immediately, without asking for confirmation, and
   can include deletions.
 - The conversation is not saved. Reloading the page clears it.
-- Each request is limited to 10 rounds of tool calls, so a large request may
-  stop part-way through.
+- Each request is limited to 25 rounds of tool calls. The assistant can
+  create many variables or links in one round, so a whole starter diagram
+  usually takes a handful. If it runs out, it says so; reply "continue".
+- It places new variables automatically and cannot choose where they go.
 - The diagram's contents and the conversation are sent to the configured
   provider: Anthropic's API, the OpenAI-compatible endpoint (which may be a
   third party such as OpenRouter), or the Ollama server. They stay on your own
