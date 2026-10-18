@@ -10,7 +10,9 @@ module Decidim
       isolate_namespace Decidim::CausalLoop
 
       routes do
-        resources :nodes,         only: [:create, :update, :destroy]
+        resources :nodes,         only: [:create, :update, :destroy] do
+          delete :destroy_many, on: :collection
+        end
         resources :links,         only: [:create, :update, :destroy]
         post "agent", to: "conversations#create", as: :agent
         root to: "diagrams#index"

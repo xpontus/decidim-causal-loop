@@ -18,6 +18,12 @@ Space.
   (nodes). Draw directed links between them and mark each as positive (+) or
   negative (−). Resize nodes, change their font size, and bend links so they
   don't overlap.
+- **Automatic layout.** The Auto-layout button rearranges the diagram with a
+  force-directed (spring) layout and saves the result. Press it again for a
+  different arrangement.
+- **Full view.** The editor fills the browser window by default, hiding
+  Decidim's header and footer. The AI assistant panel sits beside the canvas
+  (or below it), and can be resized.
 - **Saved as you go.** Every change is saved to the server as you
   make it. There is no separate save step.
 - **Edit and view permissions.** Organization admins, admins of the
@@ -93,7 +99,8 @@ Space.
 - It can add, rename and delete variables and links and change polarity. It
   cannot move or resize nodes or bend links.
 - Its changes take effect immediately, without asking for confirmation, and
-  can include deletions.
+  can include deletions. The exception is replacing the whole diagram: the
+  editor asks before the previous diagram is deleted.
 - The conversation is not saved. Reloading the page clears it.
 - Each request is limited to 25 rounds of tool calls. The assistant can
   create many variables or links in one round, so a whole starter diagram

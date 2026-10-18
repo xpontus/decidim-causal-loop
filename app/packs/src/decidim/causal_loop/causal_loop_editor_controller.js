@@ -212,7 +212,7 @@ export default class extends Controller {
 
     // Keyboard
     this.onKeyDown = (e) => {
-      if (e.target.tagName === "INPUT") return;
+      if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
       if ((e.key === "c" || e.key === "C") && !this.cLinkMode && this.hoveredNode) {
         this.startCLink(this.hoveredNode);
       }
@@ -238,6 +238,192 @@ export default class extends Controller {
     this.element.querySelector("#btn-node-shorter") ?.addEventListener("click", () => this.resizeSelected(  0,-10));
     this.element.querySelector("#btn-font-larger")  ?.addEventListener("click", () => this.fontSizeSelected( 2));
     this.element.querySelector("#btn-font-smaller") ?.addEventListener("click", () => this.fontSizeSelected(-2));
+
+    this.element.querySelector("#btn-layout")?.addEventListener("click", () => this.autoLayout());
+  }
+
+  // ---- Automatic layout ----
+
+  // Rearranges the diagram with Cytoscape's built-in force-directed "cose"
+  // layout: links act as springs, nodes repel each other. Only cose's
+  // arrangement is kept; it is rescaled to the canvas's shape (cose tends to
+  // produce tall, sparse layouts) and then overlapping boxes are pushed
+  // apart, since cose treats nodes almost as points and ours are wide
+  // rectangles. The layout starts from random positions, so pressing the
+  // button again gives a different arrangement. Bends are reset, since they
+  // were drawn for the old positions. The result is saved.
+  autoLayout() {
+    if (this.cy.nodes().length === 0) return;
+    this.removeBendHandles();
+
+    const layout = this.cy.layout({
+      name: "cose",
+      animate: false,
+      fit: false,
+      randomize: true,
+      idealEdgeLength: () => 120,
+      nodeRepulsion: () => 20000,
+      nodeOverlap: 40,
+      componentSpacing: 80,
+      gravity: 0.8
+    });
+
+    // The layout is computed without animation and only then animated into
+    // place, so saving never waits on animation frames (which a background
+    // tab does not get).
+    const start = new Map(this.cy.nodes().map(n => [n.id(), { ...n.position() }]));
+    layout.one("layoutstop", () => {
+      const boxes = this.cy.nodes().map(n => ({
+        node: n, x: n.position("x"), y: n.position("y"),
+        w: n.data("width") ?? 130, h: n.data("height") ?? 44
+      }));
+      this.scaleToCanvas(boxes);
+      this.removeOverlaps(boxes);
+
+      boxes.forEach(b => b.node.position(start.get(b.node.id())));
+      this.cy.layout({
+        name: "preset",
+        positions: (n) => { const b = boxes.find(x => x.node === n); return { x: b.x, y: b.y }; },
+        animate: true,
+        animationDuration: 500,
+        fit: true,
+        padding: 40,
+        stop: () => { if (this.cy.zoom() > 1) this.cy.zoom(1).center(); }
+      }).run();
+
+      this.resetBends();
+      this.saveLayout(boxes);
+    });
+    layout.run();
+  }
+
+  // Rescales positions so the layout has the canvas's aspect ratio and gives
+  // each node a cell of roughly cellWidth x cellHeight.
+  scaleToCanvas(boxes, cellWidth = 230, cellHeight = 110) {
+    const xs = boxes.map(b => b.x);
+    const ys = boxes.map(b => b.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const aspect = this.cy.width() / this.cy.height();
+    const width  = Math.sqrt(boxes.length * cellWidth * cellHeight * aspect);
+    const height = width / aspect;
+    const scaleX = width  / ((Math.max(...xs) - minX) || 1);
+    const scaleY = height / ((Math.max(...ys) - minY) || 1);
+    boxes.forEach(b => {
+      b.x = (b.x - minX) * scaleX;
+      b.y = (b.y - minY) * scaleY;
+    });
+  }
+
+  // Moves overlapping boxes apart along the axis where they overlap least,
+  // until there is at least a gap between every pair (or it gives up).
+  removeOverlaps(boxes, gapX = 30, gapY = 20) {
+    for (let iteration = 0; iteration < 300; iteration++) {
+      let moved = false;
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i];
+          const b = boxes[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const overlapX = (a.w + b.w) / 2 + gapX - Math.abs(dx);
+          const overlapY = (a.h + b.h) / 2 + gapY - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+
+          moved = true;
+          if (overlapX / (a.w + b.w) < overlapY / (a.h + b.h)) {
+            const shift = (dx >= 0 ? 1 : -1) * overlapX / 2;
+            a.x -= shift; b.x += shift;
+          } else {
+            const shift = (dy >= 0 ? 1 : -1) * overlapY / 2;
+            a.y -= shift; b.y += shift;
+          }
+        }
+      }
+      if (!moved) return;
+    }
+  }
+
+  resetBends() {
+    this.cy.edges().forEach(edge => {
+      if (!edge.data("cp1Distance") && !edge.data("cp2Distance")) return;
+      edge.data({ cp1Distance: 0, cp2Distance: 0 });
+      edge.removeStyle("curve-style control-point-distances control-point-weights");
+      this.updateLink(edge.data("dbId"), { cp1_distance: 0, cp2_distance: 0 });
+    });
+  }
+
+  async saveLayout(boxes) {
+    this.updateStatus("Saving layout…");
+    const results = await Promise.all(boxes.map(b =>
+      this.apiRequest(`${this.nodesUrlValue}/${b.node.data("dbId")}`, "PATCH", {
+        node: { position_x: Math.round(b.x), position_y: Math.round(b.y) }
+      }).then(resp => resp.ok).catch(() => false)
+    ));
+    this.updateStatus(results.every(Boolean) ? "Layout saved" : "Some positions could not be saved");
+    setTimeout(() => this.updateStatus(""), 3000);
+  }
+
+  // ---- Confirmation dialog ----
+
+  // Resolves to true if the user confirms. Uses a native <dialog>, so it is
+  // modal, closes on Escape (as a cancel) and keeps focus inside.
+  confirmDialog({ title, message, confirmLabel, cancelLabel }) {
+    const dialog = this.element.querySelector("#cl-confirm");
+    if (!dialog?.showModal) return Promise.resolve(false);
+
+    dialog.querySelector("#cl-confirm-title").textContent   = title;
+    dialog.querySelector("#cl-confirm-message").textContent = message;
+    const ok     = dialog.querySelector("#cl-confirm-ok");
+    const cancel = dialog.querySelector("#cl-confirm-cancel");
+    ok.textContent     = confirmLabel;
+    cancel.textContent = cancelLabel;
+
+    return new Promise(resolve => {
+      const finish = (result) => {
+        ok.removeEventListener("click", onOk);
+        cancel.removeEventListener("click", onCancel);
+        dialog.removeEventListener("close", onClose);
+        if (dialog.open) dialog.close();
+        resolve(result);
+      };
+      const onOk     = () => finish(true);
+      const onCancel = () => finish(false);
+      const onClose  = () => finish(false);
+      ok.addEventListener("click", onOk);
+      cancel.addEventListener("click", onCancel);
+      dialog.addEventListener("close", onClose);
+      dialog.showModal();
+      cancel.focus();
+    });
+  }
+
+  // The AI assistant marks the old diagram for deletion instead of deleting
+  // it; the user decides here.
+  async confirmClear(nodeIds) {
+    const nodes = nodeIds.map(id => this.cy.$(`#n${id}`)).filter(n => n.length);
+    if (nodes.length === 0) return;
+    const linkCount = this.cy.collection(nodes).connectedEdges().length;
+
+    const confirmed = await this.confirmDialog({
+      title: "Delete the previous diagram?",
+      message: `The AI assistant wants to replace the diagram. Delete the ${nodes.length} earlier ` +
+               `variables and their ${linkCount} links? This cannot be undone.`,
+      confirmLabel: "Delete them",
+      cancelLabel: "Keep them"
+    });
+    if (!confirmed) {
+      this.appendChatMessage("assistant", "Kept the previous diagram. You can delete parts of it yourself.");
+      return;
+    }
+
+    const resp = await this.apiRequest(`${this.nodesUrlValue}/destroy_many`, "DELETE", { node_ids: nodeIds });
+    if (resp.ok) {
+      this.removeBendHandles();
+      nodes.forEach(n => n.remove());
+    } else {
+      this.appendChatMessage("error", `Could not delete the previous diagram (error ${resp.status}).`);
+    }
   }
 
   // ---- C-key link creation ----
@@ -572,6 +758,14 @@ export default class extends Controller {
     this.element.querySelector("#btn-zoom-out")?.addEventListener("click", () => {
       this.cy.zoom({ level: this.cy.zoom() / 1.25, renderedPosition: { x: this.cy.width() / 2, y: this.cy.height() / 2 } });
     });
+    // Full view is the default; the choice is remembered per browser.
+    this.setFullView(this.readPreference("fullView") !== "false");
+    this.element.querySelector("#btn-full-view")?.addEventListener("click", () => {
+      const full = !this.element.classList.contains("is-full-view");
+      this.setFullView(full);
+      this.writePreference("fullView", full);
+    });
+
     this.element.querySelector("#btn-fit")?.addEventListener("click", () => {
       this.cy.fit(this.cy.elements(), 40);
     });
@@ -579,6 +773,24 @@ export default class extends Controller {
     this.element.querySelector("#btn-export-graphml") ?.addEventListener("click", () => this.exportGraphml());
     this.element.querySelector("#btn-save-png")      ?.addEventListener("click", () => this.savePng());
     this.element.querySelector("#btn-print-pdf")     ?.addEventListener("click", () => this.printPdf());
+  }
+
+  // The editor covers the window, hiding Decidim's header and footer.
+  setFullView(full) {
+    this.element.classList.toggle("is-full-view", full);
+    document.documentElement.classList.toggle("cl-full-view", full);
+    const btn = this.element.querySelector("#btn-full-view");
+    if (btn) btn.textContent = full ? "✕ Exit full view" : "⛶ Full view";
+    this.fitView();
+  }
+
+  // After the canvas changes size: fit the diagram, but never enlarge it
+  // beyond 100%.
+  fitView() {
+    this.cy.resize();
+    if (this.cy.elements().length === 0) return;
+    this.cy.fit(this.cy.elements(), 40);
+    if (this.cy.zoom() > 1) this.cy.zoom(1).center();
   }
 
   // ---- Export ----
@@ -622,23 +834,105 @@ export default class extends Controller {
   // ---- AI Chat ----
 
   setupChat() {
-    const btn   = this.element.querySelector("#btn-ai-chat");
-    const panel = this.element.querySelector("#cl-chat");
-    const input = this.element.querySelector("#cl-chat-input");
-    const send  = this.element.querySelector("#cl-chat-send");
-    if (!btn || !panel) return;
+    const btn       = this.element.querySelector("#btn-ai-chat");
+    const workspace = this.element.querySelector("#cl-workspace");
+    const input     = this.element.querySelector("#cl-chat-input");
+    const send      = this.element.querySelector("#cl-chat-send");
+    if (!btn || !workspace) return;
+
+    this.workspace = workspace;
+    this.applyChatPosition(this.readPreference("chatPosition") || "right");
+    const width  = this.readPreference("chatWidth");
+    const height = this.readPreference("chatHeight");
+    if (width)  workspace.style.setProperty("--cl-chat-width",  `${width}px`);
+    if (height) workspace.style.setProperty("--cl-chat-height", `${height}px`);
 
     btn.addEventListener("click", () => {
-      const open = panel.style.display === "flex";
-      panel.style.display = open ? "none" : "flex";
-      btn.textContent = open ? "🤖 AI Assistant" : "✕ Close AI";
-      if (!open) input?.focus();
+      const open = workspace.classList.toggle("is-chat-open");
+      btn.textContent = open ? "✕ Close AI" : "🤖 AI Assistant";
+      this.fitView();
+      if (open) input?.focus();
     });
+
+    this.element.querySelector("#cl-chat-position")?.addEventListener("click", () => {
+      const next = this.chatPosition === "right" ? "below" : "right";
+      this.applyChatPosition(next);
+      this.writePreference("chatPosition", next);
+    });
+
+    this.setupChatResize();
 
     send?.addEventListener("click", () => this.sendChatMessage());
     input?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.sendChatMessage(); }
     });
+  }
+
+  // "right" puts the panel beside the canvas, "below" under it. Narrow
+  // screens always get "below".
+  applyChatPosition(position) {
+    const narrow = window.matchMedia("(max-width: 767px)").matches;
+    this.chatPosition = narrow ? "below" : position;
+    this.workspace.classList.toggle("cl-workspace--right", this.chatPosition === "right");
+    this.workspace.classList.toggle("cl-workspace--below", this.chatPosition === "below");
+    // The native grip leaves an inline height, which must not stretch the
+    // panel once it is back beside the canvas.
+    const chat = this.element.querySelector("#cl-chat");
+    if (chat) chat.style.height = "";
+    const toggle = this.element.querySelector("#cl-chat-position");
+    if (toggle) {
+      toggle.textContent = this.chatPosition === "right" ? "Move below" : "Move right";
+      toggle.hidden = narrow;
+    }
+    this.fitView();
+  }
+
+  // Beside the canvas, dragging the splitter sets the panel's width. Below
+  // it, the panel has a native resize grip; its height is remembered.
+  setupChatResize() {
+    const splitter = this.element.querySelector("#cl-splitter");
+    const chat     = this.element.querySelector("#cl-chat");
+    if (!splitter || !chat) return;
+
+    splitter.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      splitter.classList.add("is-dragging");
+      const rect = this.workspace.getBoundingClientRect();
+      let width = null;
+
+      const onMove = (me) => {
+        width = Math.min(Math.max(rect.right - me.clientX, 260), rect.width - 300);
+        this.workspace.style.setProperty("--cl-chat-width", `${width}px`);
+        this.cy.resize();
+      };
+      const onUp = () => {
+        splitter.classList.remove("is-dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        if (width !== null) this.writePreference("chatWidth", Math.round(width));
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    let saveTimer = null;
+    this.chatResizeObserver = new ResizeObserver(() => {
+      if (this.chatPosition !== "below" || !chat.style.height) return;
+      this.workspace.style.setProperty("--cl-chat-height", chat.style.height);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => this.writePreference("chatHeight", parseInt(chat.style.height, 10)), 300);
+    });
+    this.chatResizeObserver.observe(chat);
+  }
+
+  // Panel position and size are a per-browser convenience; storage may be
+  // unavailable (private mode), which just means the defaults.
+  readPreference(key) {
+    try { return window.localStorage.getItem(`causalLoop.${key}`); } catch { return null; }
+  }
+
+  writePreference(key, value) {
+    try { window.localStorage.setItem(`causalLoop.${key}`, String(value)); } catch { /* ignore */ }
   }
 
   async sendChatMessage() {
@@ -692,8 +986,13 @@ export default class extends Controller {
   }
 
   applyActions(actions) {
+    let clearIds = null;
     for (const action of actions) {
       switch (action.type) {
+        case "confirm_clear":
+          clearIds = action.node_ids;
+          break;
+
         case "add_node":
           if (!this.cy.$(`#n${action.id}`).length) {
             this.cy.add({
@@ -740,6 +1039,7 @@ export default class extends Controller {
           break;
       }
     }
+    if (clearIds) this.confirmClear(clearIds);
   }
 
   // ---- Helpers ----
@@ -763,6 +1063,8 @@ export default class extends Controller {
     document.removeEventListener("keydown", this.onKeyDown, true);
     if (this.onPreviewMove) document.removeEventListener("mousemove", this.onPreviewMove);
     this.removeBendHandles();
+    this.chatResizeObserver?.disconnect();
+    document.documentElement.classList.remove("cl-full-view");
     this.cy?.destroy();
   }
 }

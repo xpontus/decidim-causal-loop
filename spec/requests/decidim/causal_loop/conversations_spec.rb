@@ -131,15 +131,30 @@ module Decidim::CausalLoop
           expect(JSON.parse(tool_results.last).last["error"]).to start_with("source node not found")
         end
 
-        it "clears the diagram in one call" do
+        it "reuses a node whose title already exists instead of duplicating it" do
           run_tools(
-            ["create_nodes", { "titles" => %w(A B) }],
-            ["create_links", { "links" => [{ "source" => "A", "target" => "B", "polarity" => "positive" }] }],
-            ["clear_diagram", {}]
+            ["create_nodes", { "titles" => ["Fishing"] }],
+            ["create_nodes", { "titles" => ["fishing", "Fish Stock"] }]
           )
 
-          expect(node_titles).to be_empty
-          expect(Link.where(decidim_component_id: component.id)).to be_empty
+          expect(node_titles).to contain_exactly("Fishing", "Fish Stock")
+          expect(JSON.parse(tool_results.last).first).to include("title" => "Fishing", "note" => "already existed")
+        end
+
+        it "only marks the diagram for clearing, and builds the new one from scratch" do
+          run_tools(
+            ["create_nodes", { "titles" => %w(Fishing Tourism) }],
+            ["clear_diagram", {}],
+            ["create_nodes", { "titles" => %w(Fishing Mining) }],
+            ["create_links", { "links" => [{ "source" => "Fishing", "target" => "Mining", "polarity" => "positive" }] }]
+          )
+
+          old_ids = JSON.parse(tool_results.first).pluck("id")
+          new_ids = JSON.parse(tool_results.third).pluck("id")
+          expect(node_titles).to contain_exactly("Fishing", "Tourism", "Fishing", "Mining")
+          expect(new_ids & old_ids).to be_empty
+          expect(Link.where(decidim_component_id: component.id).pluck(:source_node_id)).to eq([new_ids.first])
+          expect(response.parsed_body["actions"]).to include("type" => "confirm_clear", "node_ids" => old_ids)
         end
       end
     end

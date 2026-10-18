@@ -30,6 +30,15 @@ module Decidim
         head :no_content
       end
 
+      # Deletes the given nodes and their links in one request. Used when the
+      # user confirms clearing the diagram after the AI assistant asked to.
+      def destroy_many
+        ids = Array(params[:node_ids]).map(&:to_i)
+        nodes = Node.where(decidim_component_id: current_component.id, id: ids)
+        Node.transaction { nodes.each(&:destroy!) }
+        render json: { deleted: nodes.map(&:id) }
+      end
+
       private
 
       def require_edit_permission!

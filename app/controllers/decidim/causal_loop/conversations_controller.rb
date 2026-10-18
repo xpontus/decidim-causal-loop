@@ -28,6 +28,7 @@ module Decidim
         @nodes   = Node.where(decidim_component_id: current_component.id).to_a
         @links   = Link.where(decidim_component_id: current_component.id).to_a
         @actions = []
+        @pending_clear_ids = []
 
         messages = history + [{ role: "user", content: message }]
         reply    = agent.run(system: system_prompt, messages: messages, tools: tool_definitions) do |name, input|
@@ -83,19 +84,28 @@ module Decidim
           title = input["title"].to_s.strip
           return "Error: title is required" if title.blank?
 
-          node = add_node(title)
-          { id: node.id, title: node.title }.to_json
+          find_or_add_node(title).to_json
 
         when "create_nodes"
           titles = Array(input["titles"]).map { |t| t.to_s.strip }.compact_blank
           return "Error: titles must be a non-empty list" if titles.empty?
 
-          titles.map { |title| add_node(title).then { |node| { id: node.id, title: node.title } } }.to_json
+          titles.map { |title| find_or_add_node(title) }.to_json
 
+        # Deleting a whole diagram is not something to do on a model's say-so,
+        # so the current nodes are only marked here. The editor asks the user
+        # to confirm and then deletes them; until then they are invisible to
+        # the other tools, so the model builds the new diagram from scratch.
         when "clear_diagram"
-          count = @nodes.size
-          @nodes.dup.each { |node| remove_node(node) }
-          "Deleted all #{count} nodes and their links"
+          ids = @nodes.map(&:id) - @pending_clear_ids
+          return "The diagram is already empty" if ids.empty?
+
+          @pending_clear_ids.concat(ids)
+          @nodes.reject! { |n| ids.include?(n.id) }
+          @links.reject! { |l| ids.include?(l.source_node_id) || ids.include?(l.target_node_id) }
+          @actions << { type: "confirm_clear", node_ids: @pending_clear_ids.dup }
+          "The #{ids.size} existing nodes and their links will be deleted once the user confirms. " \
+            "Treat the diagram as empty and build the new one now."
 
         when "update_node"
           node  = find_node(input["id"])
@@ -156,6 +166,16 @@ module Decidim
         end
       rescue ActiveRecord::RecordInvalid => e
         "Error: #{e.message}"
+      end
+
+      # A causal loop diagram has one node per variable, so a title that is
+      # already in use (ignoring case and spacing) returns the existing node.
+      def find_or_add_node(title)
+        existing = @nodes.find { |n| title_key(n.title) == title_key(title) }
+        return { id: existing.id, title: existing.title, note: "already existed" } if existing
+
+        node = add_node(title)
+        { id: node.id, title: node.title }
       end
 
       def add_node(title)
@@ -226,6 +246,8 @@ module Decidim
       end
 
       def find_node(id)
+        return nil if @pending_clear_ids.include?(id.to_i)
+
         @nodes.find { |n| n.id == id.to_i } ||
           Node.find_by(id: id.to_i, decidim_component_id: current_component.id)
       end
@@ -302,6 +324,8 @@ module Decidim
             looking up their IDs. The current diagram above already lists every ID.
           - When the user approves a diagram you proposed, build all of it: every node and
             every link, not a part of it.
+          - When the user asks for a new or fresh diagram and the current diagram is not
+            empty, call clear_diagram first. The user is asked to confirm the deletion.
           - Keep node titles short (1–4 words), starting with a capital letter.
           - After changes, briefly explain what you did and the systems logic behind it.
           - Answer questions without tools — only call tools when actually modifying the diagram.

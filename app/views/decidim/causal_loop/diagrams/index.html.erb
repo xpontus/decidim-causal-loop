@@ -5,15 +5,33 @@
   .cl-toolbar .button.hollow:hover { background-color: transparent !important; }
   .cl-toolbar .button.hollow { color: inherit; }
 
-  #cl-chat { display:none; flex-direction:column; border:1px solid #ddd; border-radius:4px; margin-top:0.75rem; background:#fff; }
-  #cl-chat-messages { flex:1; min-height:180px; max-height:320px; overflow-y:auto; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem; }
-  .cl-msg { padding:0.45rem 0.7rem; border-radius:8px; font-size:0.85rem; line-height:1.4; max-width:80%; white-space:pre-wrap; word-break:break-word; }
+  /* Canvas and AI panel. The panel sits to the right of the canvas, resized
+     by dragging the splitter between them, or below it, resized by the
+     panel's own bottom-right grip. */
+  .cl-workspace { display:flex; --cl-chat-width:380px; --cl-chat-height:320px; }
+  .cl-workspace--right { flex-direction:row; height:600px; }
+  .cl-workspace--below { flex-direction:column; }
+  #cy { width:100%; height:600px; border:1px solid #ddd; border-radius:4px; background:#fafafa; position:relative; }
+  .cl-workspace--right #cy { flex:1; min-width:0; height:100%; }
+  #cl-splitter { display:none; flex:none; background:transparent; }
+  #cl-splitter:hover, #cl-splitter.is-dragging { background:#d0e2f5; }
+  .cl-workspace--right #cl-splitter { width:8px; cursor:col-resize; }
+  .cl-workspace--right.is-chat-open #cl-splitter { display:block; }
+
+  #cl-chat { display:none; flex:none; flex-direction:column; border:1px solid #ddd; border-radius:4px; background:#fff; min-width:0; }
+  .cl-workspace.is-chat-open #cl-chat { display:flex; }
+  .cl-workspace--right #cl-chat { width:var(--cl-chat-width); height:100%; }
+  .cl-workspace--below #cl-chat { height:var(--cl-chat-height); min-height:160px; margin-top:0.75rem; resize:vertical; overflow:hidden; }
+  #cl-chat-header { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; border-bottom:1px solid #eee; font-size:0.85rem; font-weight:600; }
+  #cl-chat-header button { margin:0 0 0 auto; }
+  #cl-chat-messages { flex:1; min-height:0; overflow-y:auto; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem; }
+  .cl-msg { padding:0.45rem 0.7rem; border-radius:8px; font-size:0.85rem; line-height:1.4; max-width:90%; white-space:pre-wrap; word-break:break-word; }
   .cl-msg--user      { align-self:flex-end; background:#4a90d9; color:#fff; }
   .cl-msg--assistant { align-self:flex-start; background:#f0f0f0; color:#333; }
   .cl-msg--error     { align-self:flex-start; background:#fde8e8; color:#c0392b; }
   .cl-msg--pending   { align-self:flex-start; background:#f0f0f0; color:#999; font-style:italic; }
-  #cl-chat-footer { display:flex; gap:0.5rem; padding:0.5rem; border-top:1px solid #eee; }
-  #cl-chat-input  { flex:1; padding:0.4rem 0.6rem; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; }
+  #cl-chat-footer { display:flex; align-items:flex-end; gap:0.5rem; padding:0.5rem; border-top:1px solid #eee; }
+  #cl-chat-input  { flex:1; min-height:2.4rem; max-height:40vh; margin:0; padding:0.4rem 0.6rem; border:1px solid #ccc; border-radius:4px; font-size:0.9rem; resize:vertical; }
   #cl-chat-input:focus { outline:none; border-color:#4a90d9; }
   #cl-chat-send   { white-space:nowrap; }
 
@@ -24,6 +42,22 @@
     border-radius:4px; background:#fdf9e7; color:#5c4a00; font-size:0.85rem;
   }
   .cl-readonly-notice strong { display:block; margin-bottom:0.15rem; }
+
+  /* Full view: the editor covers the window, hiding Decidim's header and
+     footer, and the canvas takes all the remaining height. */
+  html.cl-full-view { overflow:hidden; }
+  .cl-editor.is-full-view { position:fixed; inset:0; z-index:2000; display:flex; flex-direction:column; padding:0.5rem 0.75rem; background:#fff; overflow:hidden; }
+  .cl-editor.is-full-view .cl-workspace { flex:1; min-height:0; height:auto; }
+  .cl-editor.is-full-view .cl-workspace--right #cy { height:100%; }
+  .cl-editor.is-full-view .cl-workspace--below #cy { flex:1; min-height:200px; height:auto; }
+  .cl-editor .cl-full-view-title { display:none; }
+  .cl-editor.is-full-view .cl-full-view-title { display:inline; font-weight:600; margin-right:0.5rem; }
+
+  #cl-confirm { max-width:28rem; padding:1.25rem; border:1px solid #ccc; border-radius:6px; box-shadow:0 8px 30px rgba(0,0,0,0.2); }
+  #cl-confirm::backdrop { background:rgba(0,0,0,0.35); }
+  #cl-confirm h3 { margin:0 0 0.5rem; font-size:1.1rem; }
+  #cl-confirm p { margin:0 0 1rem; font-size:0.9rem; }
+  #cl-confirm .cl-confirm-buttons { display:flex; justify-content:flex-end; gap:0.5rem; }
 </style>
 
 <div class="row">
@@ -31,6 +65,7 @@
     <h2 class="section-heading"><%= translated_attribute(current_component.name) %></h2>
 
     <div
+      class="cl-editor"
       data-controller="causal-loop-editor"
       data-causal-loop-editor-nodes-value="<%= @nodes.map { |n| { id: n.id, title: n.title, description: n.description, position_x: n.position_x, position_y: n.position_y, width: n.width, height: n.height, font_size: n.font_size } }.to_json %>"
       data-causal-loop-editor-links-value="<%= @links.map { |l| { id: l.id, source_node_id: l.source_node_id, target_node_id: l.target_node_id, polarity: l.polarity, label: l.label, cp1_distance: l.cp1_distance.to_f, cp2_distance: l.cp2_distance&.to_f } }.to_json %>"
@@ -54,12 +89,16 @@
           <span style="font-size:0.8rem; color:#666; margin-left:0.25rem;">Font:</span>
           <button type="button" id="btn-font-larger"   class="button hollow small" title="Larger font">A+</button>
           <button type="button" id="btn-font-smaller"  class="button hollow small" title="Smaller font">A−</button>
+          <span style="width:1px; height:1.5rem; background:#ddd; margin:0 0.25rem;"></span>
+          <button type="button" id="btn-layout" class="button hollow small" title="Rearrange nodes with a force-directed (spring) layout">&#x2726; Auto-layout</button>
           <button type="button" id="btn-ai-chat"  class="button hollow small" style="margin-left:auto;">&#x1F916; AI Assistant</button>
           <span id="toolbar-status" style="color:#666; font-size:0.85rem;"></span>
         </div>
       <% end %>
 
       <div class="cl-toolbar" style="margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <span class="cl-full-view-title"><%= translated_attribute(current_component.name) %></span>
+        <button type="button" id="btn-full-view" class="button hollow small" title="Toggle full view">&#x26F6; Full view</button>
         <div style="display:flex; gap:0.25rem;">
           <button type="button" id="btn-zoom-out" class="button hollow small" title="Zoom out" style="min-width:2rem;">−</button>
           <button type="button" id="btn-fit"      class="button hollow small" title="Fit all">Fit</button>
@@ -95,7 +134,25 @@
       </p>
       <% end %>
 
-      <div id="cy" style="width:100%; height:600px; border:1px solid #ddd; border-radius:4px; background:#fafafa; position:relative;"></div>
+      <div id="cl-workspace" class="cl-workspace cl-workspace--right">
+        <div id="cy"></div>
+        <% if @editable %>
+          <div id="cl-splitter" role="separator" aria-label="Resize the AI assistant panel" title="Drag to resize"></div>
+          <div id="cl-chat">
+            <div id="cl-chat-header">
+              <span>&#x1F916; AI Assistant</span>
+              <button type="button" id="cl-chat-position" class="button hollow tiny" title="Move the panel">Move below</button>
+            </div>
+            <div id="cl-chat-messages">
+              <div class="cl-msg cl-msg--assistant">Hi! I can help you build and analyse this causal loop diagram. Ask me to add nodes and links, explain loops, or describe a system and I'll sketch it for you.</div>
+            </div>
+            <div id="cl-chat-footer">
+              <textarea id="cl-chat-input" rows="2" placeholder="e.g. &quot;Add a reinforcing loop about staff burnout&quot; (Shift+Enter for a new line)" autocomplete="off"></textarea>
+              <button type="button" id="cl-chat-send" class="button small button--sc cl-chat-send">Send</button>
+            </div>
+          </div>
+        <% end %>
+      </div>
 
       <% if @nodes.empty? %>
         <p style="text-align:center; color:#999; margin-top:1rem;">
@@ -104,15 +161,14 @@
       <% end %>
 
       <% if @editable %>
-        <div id="cl-chat">
-          <div id="cl-chat-messages">
-            <div class="cl-msg cl-msg--assistant">Hi! I can help you build and analyse this causal loop diagram. Ask me to add nodes and links, explain loops, or describe a system and I'll sketch it for you.</div>
+        <dialog id="cl-confirm" aria-labelledby="cl-confirm-title">
+          <h3 id="cl-confirm-title"></h3>
+          <p id="cl-confirm-message"></p>
+          <div class="cl-confirm-buttons">
+            <button type="button" id="cl-confirm-cancel" class="button hollow small"></button>
+            <button type="button" id="cl-confirm-ok" class="button button--alert small"></button>
           </div>
-          <div id="cl-chat-footer">
-            <input type="text" id="cl-chat-input" placeholder="e.g. "Add a reinforcing loop about staff burnout"" autocomplete="off">
-            <button type="button" id="cl-chat-send" class="button small button--sc cl-chat-send">Send</button>
-          </div>
-        </div>
+        </dialog>
       <% end %>
     </div>
   </div>
