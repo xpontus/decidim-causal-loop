@@ -14,6 +14,7 @@ module Decidim
           delete :destroy_many, on: :collection
         end
         resources :links,         only: [:create, :update, :destroy]
+        post "restore", to: "restorations#create", as: :restore
         post "agent", to: "conversations#create", as: :agent
         get "loops", to: "diagrams#loops", as: :loops
         root to: "diagrams#index"

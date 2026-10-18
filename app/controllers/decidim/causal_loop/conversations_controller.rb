@@ -159,7 +159,7 @@ module Decidim
           link = find_link(input["id"])
           return "Error: link not found" unless link
 
-          link.destroy!
+          link.soft_delete!
           @links.delete_if { |l| l.id == link.id }
           @actions << { type: "remove_link", id: link.id }
           "Deleted link #{link.id}"
@@ -191,14 +191,10 @@ module Decidim
       end
 
       def remove_node(node)
-        Link.where(decidim_component_id: current_component.id)
-            .where("source_node_id = ? OR target_node_id = ?", node.id, node.id)
-            .each do |l|
-              @actions << { type: "remove_link", id: l.id }
-              @links.delete_if { |x| x.id == l.id }
-              l.destroy!
-            end
-        node.destroy!
+        node.soft_delete!.each do |l|
+          @actions << { type: "remove_link", id: l.id }
+          @links.delete_if { |x| x.id == l.id }
+        end
         @nodes.delete_if { |n| n.id == node.id }
         @actions << { type: "remove_node", id: node.id }
       end

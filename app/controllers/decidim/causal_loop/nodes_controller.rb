@@ -25,18 +25,20 @@ module Decidim
       end
 
       def destroy
-        @node = Node.find_by!(decidim_component_id: current_component.id, id: params[:id])
-        @node.destroy
-        head :no_content
+        node = Node.find_by!(decidim_component_id: current_component.id, id: params[:id])
+        links = node.soft_delete!
+        render json: { deleted: { nodes: [node.id], links: links.map(&:id) } }
       end
 
       # Deletes the given nodes and their links in one request. Used when the
       # user confirms clearing the diagram after the AI assistant asked to.
+      # Like `destroy`, it answers with everything deleted, for undo.
       def destroy_many
         ids = Array(params[:node_ids]).map(&:to_i)
-        nodes = Node.where(decidim_component_id: current_component.id, id: ids)
-        Node.transaction { nodes.each(&:destroy!) }
-        render json: { deleted: nodes.map(&:id) }
+        nodes = Node.where(decidim_component_id: current_component.id, id: ids).to_a
+        time = Time.current
+        links = Node.transaction { nodes.flat_map { |n| n.soft_delete!(time) } }
+        render json: { deleted: { nodes: nodes.map(&:id), links: links.map(&:id).uniq } }
       end
 
       private

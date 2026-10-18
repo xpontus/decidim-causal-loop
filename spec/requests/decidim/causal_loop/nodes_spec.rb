@@ -9,19 +9,21 @@ module Decidim::CausalLoop
     let(:component) { create(:causal_loop_component, :published, participatory_space:) }
     let(:other_component) { create(:causal_loop_component, :published, participatory_space:) }
     let(:user) { create(:user, :confirmed, organization:) }
-    let(:destroy_many_path) { "#{Decidim::EngineRouter.main_proxy(component).nodes_path}/destroy_many" }
+    let(:nodes_path) { Decidim::EngineRouter.main_proxy(component).nodes_path }
     let!(:fishing) { Node.create!(title: "Fishing", decidim_component_id: component.id) }
     let!(:mining) { Node.create!(title: "Mining", decidim_component_id: component.id) }
     let!(:elsewhere) { Node.create!(title: "Elsewhere", decidim_component_id: other_component.id) }
-
-    before do
-      host! organization.host
+    let!(:fishing_mining) do
       Link.create!(source_node_id: fishing.id, target_node_id: mining.id, polarity: "positive", decidim_component_id: component.id)
     end
 
-    def destroy_many(ids)
-      delete destroy_many_path, params: { node_ids: ids }.to_json, headers: { "CONTENT_TYPE" => "application/json" }
+    before { host! organization.host }
+
+    def json_request(method, path, params = {})
+      send(method, path, params: params.to_json, headers: { "CONTENT_TYPE" => "application/json" })
     end
+
+    def destroy_many(ids) = json_request(:delete, "#{nodes_path}/destroy_many", node_ids: ids)
 
     context "when the user is an editor" do
       before do
@@ -29,12 +31,28 @@ module Decidim::CausalLoop
         login_as user, scope: :user
       end
 
-      it "deletes the given nodes and their links, but only in this component" do
-        destroy_many([fishing.id, elsewhere.id])
+      it "deletes a node and its links, and says which, so they can be restored" do
+        json_request(:delete, "#{nodes_path}/#{fishing.id}")
 
-        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to eq("deleted" => { "nodes" => [fishing.id], "links" => [fishing_mining.id] })
         expect(Node.pluck(:title)).to contain_exactly("Mining", "Elsewhere")
         expect(Link.count).to eq(0)
+        expect(Node.with_deleted.find(fishing.id)).to be_deleted
+      end
+
+      it "deletes the given nodes and their links, but only in this component" do
+        destroy_many([fishing.id, mining.id, elsewhere.id])
+
+        expect(response.parsed_body).to eq("deleted" => { "nodes" => [fishing.id, mining.id], "links" => [fishing_mining.id] })
+        expect(Node.pluck(:title)).to contain_exactly("Elsewhere")
+        expect(Link.count).to eq(0)
+      end
+
+      it "cannot update a deleted node" do
+        fishing.soft_delete!
+        json_request(:patch, "#{nodes_path}/#{fishing.id}", node: { title: "Fish" })
+
+        expect(response).to have_http_status(:not_found)
       end
     end
 

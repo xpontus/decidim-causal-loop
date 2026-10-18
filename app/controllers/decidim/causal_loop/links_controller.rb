@@ -28,9 +28,9 @@ module Decidim
       end
 
       def destroy
-        @link = Link.find_by!(decidim_component_id: current_component.id, id: params[:id])
-        @link.destroy
-        head :no_content
+        link = Link.find_by!(decidim_component_id: current_component.id, id: params[:id])
+        link.soft_delete!
+        render json: { deleted: { nodes: [], links: [link.id] } }
       end
 
       private
