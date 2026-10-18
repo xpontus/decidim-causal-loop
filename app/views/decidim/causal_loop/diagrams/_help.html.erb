@@ -1,0 +1,103 @@
+<%# The help panel. Viewers see only what they can do; editors see everything. %>
+<aside id="cl-help" class="cl-help" aria-labelledby="cl-help-title" hidden>
+  <div class="cl-help-header">
+    <span id="cl-help-title">Diagram help</span>
+    <button type="button" id="cl-help-close" aria-label="Close diagram help">&#x2715;</button>
+  </div>
+  <div class="cl-help-body">
+    <h4>Causal loop diagrams</h4>
+    <p>
+      A causal loop diagram shows how things influence each other. Each box is a
+      <strong>variable</strong>, something that can increase or decrease. Each arrow is a
+      <strong>link</strong>: a change in one variable causes a change in another.
+    </p>
+    <ul>
+      <li><span class="cl-help-pos">+</span> (solid green): they change in the <em>same</em> direction. More tourists, more income.</li>
+      <li><span class="cl-help-neg">−</span> (dashed red): they change in <em>opposite</em> directions. More crowding, less attractiveness.</li>
+    </ul>
+    <p>
+      Arrows that lead back to where they started form a <strong>feedback loop</strong>.
+      A <strong>reinforcing</strong> loop (R) has an even number of − links and amplifies change.
+      A <strong>balancing</strong> loop (B) has an odd number and counteracts it.
+    </p>
+
+    <h4>Looking around</h4>
+    <ul>
+      <li><strong>Pan:</strong> drag on empty canvas. <strong>Zoom:</strong> scroll or pinch, or use <kbd>−</kbd> <kbd>+</kbd>. <strong>Fit</strong> shows the whole diagram.</li>
+      <li><strong>Full view</strong> hides the rest of the site so the diagram fills the window. Your choice is remembered in this browser.</li>
+      <li><strong>Loops</strong> lists every feedback loop as R1, B1, … Click one to highlight it; click it again or press <kbd>Esc</kbd> to show everything. The list updates as the diagram changes.</li>
+    </ul>
+
+    <h4>Saving and sharing</h4>
+    <ul>
+      <li><strong>Save file</strong> downloads the whole diagram, layout included, as a file that can be loaded again.</li>
+      <% if @editable %>
+        <li><strong>Load file…</strong> loads a saved file. With a diagram already here, choose <strong>Replace</strong> or <strong>Add beside</strong>. When adding, variables with the same name as existing ones are merged into them. Either can be undone.</li>
+      <% end %>
+      <li><strong>Export GraphML</strong> is for analysis in other network tools. It has no layout and cannot be loaded back.</li>
+      <li><strong>Save PNG</strong> saves a picture of the whole diagram; <strong>Print / PDF</strong> prints it or saves it as a PDF.</li>
+    </ul>
+
+    <% if @editable %>
+      <h4>Variables</h4>
+      <ul>
+        <li><strong>Add:</strong> <strong>+ Add node</strong>, or double-click empty canvas. Type the name and press <kbd>Enter</kbd>.</li>
+        <li><strong>Rename:</strong> double-click it. <kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels. Long names wrap onto several lines.</li>
+        <li><strong>Move:</strong> drag it. Select several with <kbd>Shift</kbd>-click, or hold <kbd>Shift</kbd> and drag a box across empty canvas, then drag them together.</li>
+        <li><strong>Size and font:</strong> select variables and use W+ W− H+ H− and A+ A−.</li>
+      </ul>
+
+      <h4>Links</h4>
+      <ul>
+        <li><strong>Draw:</strong> hover over a variable, press <kbd>C</kbd>, then click the variable it affects. Or use <strong>→ Add link</strong>, click the first variable, then the second. <kbd>Esc</kbd> cancels.</li>
+        <li><strong>Change the sign:</strong> new links are +. Click a link to switch between + and −. The link flashes and a message offers <strong>Undo</strong>, since a stray click is easy.</li>
+        <li><strong>Curve:</strong> double-click a link to show two handles and drag them, for example so links don't cross variables. Click empty canvas to hide the handles.</li>
+      </ul>
+
+      <h4>Deleting and undoing</h4>
+      <ul>
+        <li><strong>Delete:</strong> select variables or links and press <kbd>Delete</kbd> or <kbd>Backspace</kbd>, or click <strong>Delete selected</strong>. Deleting a variable also deletes its links.</li>
+        <li><strong>Undo / Redo:</strong> the buttons, or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>. Hover over a button to see what it will undo. Everything can be undone, including deletions, auto-layout, loading a file and a whole AI reply.</li>
+        <li>Undo covers your own changes since you opened the page; reloading clears it. If someone else has changed the same thing since, undo may fail and say so.</li>
+      </ul>
+
+      <h4>Layout</h4>
+      <ul>
+        <li><strong>Auto-layout</strong> rearranges the diagram so linked variables sit near each other and nothing overlaps. Each press gives a different arrangement; undo if you preferred the last one. It straightens curved links.</li>
+      </ul>
+
+      <h4>AI assistant</h4>
+      <ul>
+        <li>If the site has one set up, <strong>AI Assistant</strong> opens a chat. Ask it to build a diagram about a topic, add or rename variables, link them, change signs, delete things, or explain the loops.</li>
+        <li>Its changes appear straight away, and one <strong>Undo</strong> reverses a whole reply. If it wants to replace the whole diagram, you are asked first.</li>
+        <li>It cannot move, resize or curve things; use <strong>Auto-layout</strong> afterwards.</li>
+        <li>The panel sits beside the canvas; drag its edge to resize it, or <strong>Move below</strong>. <strong>Clear chat</strong> starts a new conversation.</li>
+        <li>The conversation is kept only in this browser. The diagram and your messages are sent to the AI provider the site uses.</li>
+      </ul>
+
+      <h4>Working together</h4>
+      <ul>
+        <li>Every change is saved as you make it; there is no save button.</li>
+        <li>Others don't see your changes until they reload the page, and the last change to the same thing wins.</li>
+      </ul>
+    <% else %>
+      <h4>Editing</h4>
+      <p>
+        Only site administrators, administrators of this space and people they give edit
+        access can change this diagram. Everyone else can look at it, find its loops and save it.
+      </p>
+    <% end %>
+
+    <h4>Keyboard</h4>
+    <table class="cl-help-keys">
+      <% if @editable %>
+        <tr><td><kbd>C</kbd></td><td>start a link from the variable under the pointer</td></tr>
+        <tr><td><kbd>Delete</kbd> <kbd>Backspace</kbd></td><td>delete the selection</td></tr>
+        <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd></td><td>undo</td></tr>
+        <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>redo</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>save a name; send a chat message (<kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line)</td></tr>
+      <% end %>
+      <tr><td><kbd>Esc</kbd></td><td>cancel, close handles, clear a loop highlight, close this help</td></tr>
+    </table>
+  </div>
+</aside>

@@ -1125,9 +1125,34 @@ export default class extends Controller {
       this.cy.fit(this.cy.elements(), 40);
     });
     this.setupLoops();
+    this.setupHelp();
     this.element.querySelector("#btn-export-graphml") ?.addEventListener("click", () => this.exportGraphml());
     this.element.querySelector("#btn-save-png")      ?.addEventListener("click", () => this.savePng());
     this.element.querySelector("#btn-print-pdf")     ?.addEventListener("click", () => this.printPdf());
+  }
+
+  // ---- Help ----
+
+  // The help text is rendered by the server (it differs for viewers and
+  // editors) and shown as a panel over the canvas, so people can try things
+  // while reading.
+  setupHelp() {
+    const panel  = this.element.querySelector("#cl-help");
+    const button = this.element.querySelector("#btn-help");
+    if (!panel || !button) return;
+    this.cyContainer.appendChild(panel);
+
+    const show = (open) => {
+      panel.hidden = !open;
+      button.setAttribute("aria-expanded", String(open));
+      if (open) panel.querySelector("#cl-help-close").focus();
+    };
+    button.addEventListener("click", () => show(panel.hidden));
+    panel.querySelector("#cl-help-close").addEventListener("click", () => { show(false); button.focus(); });
+    // In the capture phase, like the editor's own key handler, which stops
+    // Escape from propagating further.
+    this.onHelpKeyDown = (e) => { if (e.key === "Escape" && !panel.hidden) show(false); };
+    document.addEventListener("keydown", this.onHelpKeyDown, true);
   }
 
   // ---- Loops ----
@@ -1146,8 +1171,9 @@ export default class extends Controller {
       clearTimeout(this.loopsRefreshTimer);
       this.loopsRefreshTimer = setTimeout(() => this.refreshLoops(), 800);
     });
+    // Capture phase: see setupHelp.
     this.onLoopsKeyDown = (e) => { if (e.key === "Escape") this.highlightLoop(null); };
-    document.addEventListener("keydown", this.onLoopsKeyDown);
+    document.addEventListener("keydown", this.onLoopsKeyDown, true);
   }
 
   openLoops() {
@@ -1554,7 +1580,8 @@ export default class extends Controller {
     this.chatResizeObserver?.disconnect();
     this.hideToast();
     clearTimeout(this.loopsRefreshTimer);
-    document.removeEventListener("keydown", this.onLoopsKeyDown);
+    document.removeEventListener("keydown", this.onLoopsKeyDown, true);
+    document.removeEventListener("keydown", this.onHelpKeyDown, true);
     document.documentElement.classList.remove("cl-full-view");
     this.cy?.destroy();
   }

@@ -27,6 +27,9 @@ Space.
 - **Full view.** The editor fills the browser window by default, hiding
   Decidim's header and footer. The AI assistant panel sits beside the canvas
   (or below it), and can be resized.
+- **Built-in help.** **Diagram help** opens a panel over the canvas that
+  explains causal loop diagrams and every feature, with keyboard shortcuts.
+  Viewers see only the parts that apply to them.
 - **Saved as you go.** Every change is saved to the server as you
   make it. There is no separate save step.
 - **Undo and redo.** The Undo and Redo buttons, or <kbd>Ctrl/⌘+Z</kbd> and

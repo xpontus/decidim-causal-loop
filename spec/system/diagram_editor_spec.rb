@@ -97,6 +97,16 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
       expect(page).to have_link("Save file")
       expect(page).to have_no_button("Load file…")
     end
+
+    it "explains what viewers can do, without the editing help" do
+      click_on "Diagram help"
+
+      within("#cl-help") do
+        expect(page).to have_content("Causal loop diagrams")
+        expect(page).to have_content("Only site administrators")
+        expect(page).to have_no_content("Undo / Redo")
+      end
+    end
   end
 
   context "with edit access" do
@@ -186,6 +196,9 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         .to match_array(["n#{tourists.id}", "n#{crowding.id}"] + links.where(source_node_id: [tourists.id, crowding.id],
                                                                              target_node_id: [tourists.id, crowding.id]).map { |l| "l#{l.id}" })
       expect(editor_script("return c.cy.$('#n#{income.id}').hasClass('cl-dim');")).to be(true)
+
+      find("body").send_keys(:escape)
+      expect(editor_script("return c.cy.$('.cl-dim').length;")).to eq(0)
     end
 
     it "wraps long titles onto several lines" do
@@ -208,6 +221,18 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
 
       click_on "+ Add node"
       expect(page).to have_no_content("No nodes yet")
+    end
+
+    it "opens the help over the canvas and closes it with Esc" do
+      open_editor
+      click_on "Diagram help"
+
+      within("#cy #cl-help") do
+        expect(page).to have_content("Undo / Redo")
+        expect(page).to have_content("AI assistant")
+      end
+      find_by_id("cl-help-close").send_keys(:escape)
+      expect(page).to have_no_css("#cl-help")
     end
 
     it "opens in full view, which can be left" do
