@@ -398,8 +398,17 @@ export default class extends Controller {
     this.commands.record(command);
     this.fitView();
 
-    const skipped = body.skipped.length ? ` ${body.skipped.length} links were skipped: they refer to missing variables.` : "";
-    this.showToast(`Loaded ${body.nodes.length} variables and ${body.links.length} links.${skipped}`);
+    const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const notes = [`Loaded ${count(body.nodes.length, "new variable")} and ${count(body.links.length, "link")}.`];
+    if (body.merged.length) {
+      notes.push(`${count(body.merged.length, "variable")} matched existing ones by name: ${body.merged.join(", ")}.`);
+    }
+    if (body.conflicts.length) {
+      notes.push(`Kept the existing sign of ${count(body.conflicts.length, "link")} where the file differs: ` +
+                 `${body.conflicts.join("; ")}.`);
+    }
+    if (body.skipped.length) notes.push(`Skipped ${count(body.skipped.length, "link")} to variables missing from the file.`);
+    this.showToast(notes.join(" "), { duration: notes.length > 1 ? 15000 : 6000 });
   }
 
   // ---- Undo and redo ----

@@ -39,7 +39,10 @@ Space.
 - **Save and load files.** **Save file** downloads the whole diagram,
   layout included, as a JSON file. Editors can **Load file…** to replace the
   diagram with a saved one or add it beside the current one; either can be
-  undone. Files from the earlier "Export JSON" button load too.
+  undone. When added, a variable whose name matches an existing one (ignoring
+  case and punctuation) becomes that variable, and links already in the
+  diagram keep their sign; the editor lists both. Files from the earlier
+  "Export JSON" button load too.
 - **Export.** Download the diagram as GraphML, save it as a PNG, or print it
   / save it as a PDF.
 - **Optional AI assistant.** Editors can ask an AI to add, rename and delete

@@ -240,9 +240,7 @@ module Decidim
         key.present? && @nodes.find { |n| title_key(n.title) == key }
       end
 
-      def title_key(title)
-        title.to_s.downcase.gsub(/[^[:alnum:]]/, "")
-      end
+      def title_key(title) = Node.title_key(title)
 
       def find_node(id)
         return nil if @pending_clear_ids.include?(id.to_i)

@@ -8,6 +8,12 @@ module Decidim
     #
     # Loading also accepts the older "Export JSON" files, which had only
     # titles, positions (x, y) and polarities.
+    #
+    # A title names one variable, so a variable in the file whose title
+    # matches an existing one (as Node.title_key compares them) becomes that
+    # variable, which keeps its position and look; the file's links attach to
+    # it. A link between two variables that are already linked that way is
+    # skipped, and reported if its polarity differs.
     class DiagramFile
       FORMAT = "decidim-causal-loop"
       VERSION = 1
@@ -47,14 +53,16 @@ module Decidim
       # Creates the file's nodes and links in the component, all or nothing.
       # With replace, the current diagram is deleted first (softly, so it can
       # be restored). Links that refer to a missing variable are skipped and
-      # reported. Returns the records created and deleted.
+      # reported. Returns the records created, merged and deleted.
       def import!(component_id, replace:)
         ApplicationRecord.transaction do
-          existing = Node.where(decidim_component_id: component_id).to_a
-          deleted_links = replace ? existing.flat_map(&:soft_delete!) : []
-          nodes = create_nodes(component_id, replace ? [0, 0] : offset_beside(existing))
-          links, skipped = create_links(component_id, nodes)
-          { nodes: nodes.values, links:, skipped:, deleted_nodes: replace ? existing : [], deleted_links: }
+          deleted_nodes = replace ? Node.where(decidim_component_id: component_id).to_a : []
+          deleted_links = deleted_nodes.flat_map(&:soft_delete!)
+          existing = Node.where(decidim_component_id: component_id).index_by { |n| Node.title_key(n.title) }
+          nodes = create_nodes(component_id, existing)
+          links, skipped, conflicts = create_links(component_id, nodes)
+          created = nodes.values.uniq.reject { |n| existing.has_value?(n) }
+          { nodes: created, links:, merged: nodes.values.uniq - created, skipped:, conflicts:, deleted_nodes:, deleted_links: }
         end
       rescue ActiveRecord::RecordInvalid => e
         raise Error, "The file has an invalid variable or link: #{e.record.errors.full_messages.to_sentence}"
@@ -82,10 +90,14 @@ module Decidim
           label: attrs["label"], cp1_distance: number(attrs["cp1_distance"]) || 0, cp2_distance: number(attrs["cp2_distance"]) || 0 }
       end
 
-      # The created nodes by their key in the file.
-      def create_nodes(component_id, (offset_x, offset_y))
+      # The diagram's node for each key in the file: an existing node with the
+      # same title, or a new one.
+      def create_nodes(component_id, existing)
+        new_nodes = @nodes.reject { |attrs| existing.has_key?(Node.title_key(attrs[:title])) }
+        offset_x, offset_y = offset_beside(existing.values, new_nodes)
         @nodes.to_h do |attrs|
-          node = Node.create!(attrs.except(:key).merge(position_x: attrs[:position_x] + offset_x,
+          node = existing[Node.title_key(attrs[:title])] ||
+                 Node.create!(attrs.except(:key).merge(position_x: attrs[:position_x] + offset_x,
                                                        position_y: attrs[:position_y] + offset_y,
                                                        decidim_component_id: component_id))
           [attrs[:key], node]
@@ -94,14 +106,27 @@ module Decidim
 
       def create_links(component_id, nodes)
         skipped = []
+        conflicts = []
+        linked = Link.where(decidim_component_id: component_id).index_by { |l| [l.source_node_id, l.target_node_id] }
         links = @links.filter_map do |attrs|
           source, target = nodes.values_at(attrs[:source], attrs[:target])
           next skipped << "A link refers to a variable that is not in the file" unless source && target
 
-          Link.create!(attrs.except(:source, :target).merge(source_node_id: source.id, target_node_id: target.id,
-                                                            decidim_component_id: component_id))
+          if (link = linked[[source.id, target.id]])
+            conflicts << conflict(source, target, link, attrs) if link.polarity != attrs[:polarity]
+            next
+          end
+
+          linked[[source.id, target.id]] =
+            Link.create!(attrs.except(:source, :target).merge(source_node_id: source.id, target_node_id: target.id,
+                                                              decidim_component_id: component_id))
         end
-        [links, skipped]
+        [links, skipped, conflicts]
+      end
+
+      def conflict(source, target, link, attrs)
+        sign = ->(polarity) { polarity == "negative" ? "−" : "+" }
+        "#{source.title} → #{target.title}: kept #{sign[link.polarity]}, the file has #{sign[attrs[:polarity]]}"
       end
 
       def number(value)
@@ -110,13 +135,13 @@ module Decidim
         nil
       end
 
-      # Moves the file's diagram so it starts to the right of the current
-      # one, level with its top.
-      def offset_beside(existing)
-        return [0, 0] if existing.empty? || @nodes.empty?
+      # Moves the file's new variables so they start to the right of the
+      # current diagram, level with its top.
+      def offset_beside(existing, new_nodes)
+        return [0, 0] if existing.empty? || new_nodes.empty?
 
-        [existing.map(&:position_x).max + ADD_GAP - @nodes.pluck(:position_x).min,
-         existing.map(&:position_y).min - @nodes.pluck(:position_y).min]
+        [existing.map(&:position_x).max + ADD_GAP - new_nodes.pluck(:position_x).min,
+         existing.map(&:position_y).min - new_nodes.pluck(:position_y).min]
       end
     end
   end

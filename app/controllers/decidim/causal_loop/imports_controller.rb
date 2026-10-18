@@ -15,6 +15,8 @@ module Decidim
         render json: {
           nodes: result[:nodes].map(&:editor_json),
           links: result[:links].map(&:editor_json),
+          merged: result[:merged].map(&:title),
+          conflicts: result[:conflicts],
           deleted_nodes: result[:deleted_nodes].map(&:id),
           deleted_links: result[:deleted_links].map(&:id),
           skipped: result[:skipped]

@@ -318,7 +318,7 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         open_editor
         load_file
 
-        expect(page).to have_css(".cl-toast", text: "Loaded 2 variables and 1 links")
+        expect(page).to have_css(".cl-toast", text: "Loaded 2 new variables and 1 link.")
         expect(nodes.pluck(:title, :width)).to contain_exactly(["Tourists", 150], ["Crowding", 130])
         expect(editor_script("const e = c.cy.edges()[0]; return [e.data('polarity'), e.data('cp1Distance')];")).to eq(["negative", 20])
       end
@@ -337,15 +337,20 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         expect(canvas_labels).to eq(["Old idea"])
       end
 
-      it "adds the file beside the diagram" do
+      it "adds the file beside the diagram, merging variables with the same name" do
         node("Old idea", 100, 100)
+        tourists = node("tourists", 100, 200)
         open_editor
         load_file
         within("#cl-confirm") { click_on "Add beside" }
 
-        eventually { nodes.count == 3 }
-        expect(nodes.find_by(title: "Tourists").position_x).to eq(350)
-        expect(canvas_labels).to eq(["Crowding", "Old idea", "Tourists"])
+        expect(page).to have_css(".cl-toast", text: "Loaded 1 new variable and 1 link. 1 variable matched existing ones by name: tourists.")
+        expect(nodes.pluck(:title, :position_x)).to contain_exactly(["Old idea", 100], ["tourists", 100], ["Crowding", 350])
+        expect(links.pluck(:source_node_id)).to eq([tourists.id])
+        expect(canvas_labels).to eq(["Crowding", "Old idea", "tourists"])
+
+        click_on "Undo"
+        eventually { nodes.count == 2 && links.none? }
       end
     end
 

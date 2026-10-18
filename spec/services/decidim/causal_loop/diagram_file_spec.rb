@@ -63,6 +63,35 @@ module Decidim::CausalLoop
       expect(nodes.pluck(:title, :position_x, :position_y)).to eq([["Old", 500.0, 80.0], ["A", 750.0, 80.0], ["B", 850.0, 120.0]])
     end
 
+    describe "adding a file whose variables are already in the diagram" do
+      let!(:tourists) { Node.create!(title: "Tourists", position_x: 500, position_y: 80, decidim_component_id: other_component.id) }
+      let!(:crowding) { Node.create!(title: "Crowding", position_x: 700, position_y: 80, decidim_component_id: other_component.id) }
+      let(:file) do
+        { "nodes" => [{ "id" => 1, "title" => "tourists!", "position_x" => 0, "position_y" => 0 },
+                      { "id" => 2, "title" => "Crowding", "position_x" => 0, "position_y" => 50 },
+                      { "id" => 3, "title" => "Income", "position_x" => 100, "position_y" => 40 }],
+          "links" => [{ "source" => 1, "target" => 2, "polarity" => "positive" },
+                      { "source" => 1, "target" => 3, "polarity" => "positive" },
+                      { "source" => 3, "target" => 2, "polarity" => "negative" }] }
+      end
+
+      before do
+        Link.create!(source_node_id: tourists.id, target_node_id: crowding.id, polarity: "negative", decidim_component_id: other_component.id)
+      end
+
+      it "uses those variables and their links instead of making copies" do
+        result = described_class.new(file).import!(other_component.id, replace: false)
+        income = nodes.find_by(title: "Income")
+
+        expect(nodes.pluck(:title, :position_x, :position_y))
+          .to eq([["Tourists", 500.0, 80.0], ["Crowding", 700.0, 80.0], ["Income", 950.0, 80.0]])
+        expect(links.pluck(:source_node_id, :target_node_id, :polarity))
+          .to eq([[tourists.id, crowding.id, "negative"], [tourists.id, income.id, "positive"], [income.id, crowding.id, "negative"]])
+        expect(result).to include(nodes: [income], merged: [tourists, crowding],
+                                  conflicts: ["Tourists → Crowding: kept −, the file has +"])
+      end
+    end
+
     it "skips links to variables that are not in the file" do
       file = { "nodes" => [{ "id" => 1, "title" => "A" }], "links" => [{ "source" => 1, "target" => 2 }] }
       result = described_class.new(file).import!(other_component.id, replace: true)

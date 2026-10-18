@@ -14,6 +14,10 @@ module Decidim
 
       validates :title, presence: true
 
+      # A diagram has one node per variable, and titles that differ only in
+      # case, spacing or punctuation name the same variable.
+      def self.title_key(title) = title.to_s.downcase.gsub(/[^[:alnum:]]/, "")
+
       # The node as the editor's JavaScript expects it.
       def editor_json
         { id:, title:, description:, position_x:, position_y:, width:, height:, font_size: }
