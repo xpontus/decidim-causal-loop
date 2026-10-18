@@ -4,6 +4,7 @@ module Decidim
   module CausalLoop
     class ConversationsController < CausalLoop::ApplicationController
       before_action :authenticate_user!
+      before_action :require_edit_permission!
 
       def create
         message = params[:message].to_s.strip
@@ -41,6 +42,15 @@ module Decidim
       end
 
       private
+
+      # The agent's tools create, update and delete nodes and links, so it needs
+      # the same permission as the nodes and links endpoints. The JSON key is
+      # `error` (not `errors`) because that is what the chat panel displays.
+      def require_edit_permission!
+        return if allowed_to?(:edit, :diagram, component: current_component)
+
+        render json: { error: "Not authorized" }, status: :forbidden
+      end
 
       # Resolution order: Rails credentials, then ENV, then a local git-ignored file.
       # The file exists so a paid key can live on one machine only:
