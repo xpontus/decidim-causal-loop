@@ -1,11 +1,12 @@
 # Decidim::CausalLoop
 
-.
+A [Decidim](https://decidim.org) component for drawing **causal loop
+diagrams** together: variables, the signed (+/−) links between them, and the
+feedback loops they form. Add it to any participatory space; participants
+can view the diagram, and the people an admin chooses can edit it, with an
+optional AI assistant.
 
-## Usage
-
-CausalLoop will be available as a Component for a Participatory
-Space.
+See [Installation](#installation) to add it to a Decidim site.
 
 ## What it can and cannot do
 
@@ -36,9 +37,11 @@ Space.
   <kbd>Ctrl/⌘+Shift+Z</kbd>, step back and forward through your changes,
   including deletions, auto-layout, and a whole AI assistant reply.
 - **Edit and view permissions.** Organization admins, admins of the
-  participatory space, and users granted access under the component's
-  **Editors** screen can edit. Everyone else who can see the component can
-  view, zoom and export it.
+  participatory space, and users granted access on the component's
+  **Diagram editors** screen (**Manage** in the admin) can edit. Everyone
+  else who can see the component can view and zoom it, list its loops, and
+  save or export it. Unpublished components, private spaces and components in
+  the admin's trash are hidden as Decidim hides other content.
 - **Save and load files.** **Save file** downloads the whole diagram,
   layout included, as a JSON file. Editors can **Load file…** to replace the
   diagram with a saved one or add it beside the current one; either can be
@@ -48,9 +51,9 @@ Space.
   "Export JSON" button load too.
 - **Export.** Download the diagram as GraphML, save it as a PNG, or print it
   / save it as a PDF.
-- **Optional AI assistant.** Editors can ask an AI to add, rename and delete
-  variables and links, change polarity, or explain how the diagram works (see
-  [AI assistant](#ai-assistant)).
+- **Optional AI assistant.** Editors can ask an AI to build a diagram, add,
+  rename and delete variables and links, change polarity, list the loops, or
+  explain how the diagram works (see [AI assistant](#ai-assistant)).
 
 ### What it cannot do
 
@@ -78,14 +81,15 @@ Space.
 
 **Content**
 
-- Each variable has only a title. There is nowhere to add a description or
-  notes, and links cannot carry text labels.
+- Each variable has only a title. There is nowhere in the editor to add a
+  description or notes, and links cannot carry text labels. (The database has
+  room for both, and saved files keep them.)
 - Every node looks the same. You can't colour, group or categorise
   variables. Long titles wrap onto several lines, breaking at spaces or
   inside CamelCase names, and the box grows to fit.
 - New links always start as positive. Clicking a link switches its polarity,
   so a stray click can flip a sign; the link flashes and a message offers to
-  undo it for a few seconds.
+  undo it (as does **Undo**).
 - GraphML exports have no layout (positions, sizes, fonts or link curves)
   and cannot be loaded back. Use them for analysis in other tools; use
   **Save file** for backups and copies.

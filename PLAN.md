@@ -14,6 +14,8 @@ reinforcing or balancing depending on how many negative links they contain.
 | 4 | JSON API | ✅ Done |
 | 5 | Interactive Cytoscape.js frontend editor | ✅ Done |
 | 6 | AI agent integration | ✅ Done |
+| 7 | Editor features: loops, undo/redo, files, help | ✅ Done |
+| 8 | Decidim integration specs (admin, permissions, access, seeds) | ✅ Done |
 
 ---
 
@@ -21,23 +23,31 @@ reinforcing or balancing depending on how many negative links they contain.
 
 ```
 Browser
-  Stimulus controller "causal-loop-editor"  (app/packs/src/.../causal_loop_editor_controller.js)
-    Cytoscape.js canvas + toolbar + AI chat panel
+  Stimulus controller "causal-loop-editor"  (app/packs/src/decidim/causal_loop/)
+    causal_loop_editor_controller.js  Cytoscape.js canvas, toolbars, panels, AI chat
+    command_manager.js                undo/redo stacks and request queue
       │  JSON over fetch
       ▼
-Rails engine  Decidim::CausalLoop::Engine
-    NodesController    POST/PATCH/DELETE  nodes
-    LinksController    POST/PATCH/DELETE  links
-    OperationsController POST /operations  batches of update/delete/restore (undo/redo)
-    DiagramsController GET  /file      the diagram file (DiagramFile.dump)
-    ImportsController  POST /import    load a diagram file, replace or add
-    DiagramsController GET  the editor page
-    ConversationsController POST /agent
+Rails engine  Decidim::CausalLoop::Engine  (public side)
+    DiagramsController       GET  /             the editor page
+                             GET  /loops        feedback loops (LoopFinder)
+                             GET  /file         the diagram file (DiagramFile.dump)
+    NodesController          POST/PATCH/DELETE  nodes
+    LinksController          POST/PATCH/DELETE  links
+    OperationsController     POST /operations   batches of update/delete/restore (undo/redo)
+    ImportsController        POST /import       load a diagram file, replace or add
+    ConversationsController  POST /agent        the AI assistant
       │
       ├── AnthropicAgent         (paid, Anthropic API)
       └── OpenaiCompatibleAgent  (OpenAI, OpenRouter, TensorX, vLLM, ...)
             └── OllamaAgent      (free, local Ollama)
            both run the same tool loop over the same tool set
+Rails engine  Decidim::CausalLoop::AdminEngine  (admin side)
+    EditorsController        the component's Manage page: who may edit
+Services
+    LoopFinder      every elementary cycle, labelled R or B
+    DiagramFile     the file format: dump, parse (incl. old Export JSON), import
+    DeletedRecords  restore soft-deleted rows; purge old ones
       ▼
 PostgreSQL
     decidim_causal_loop_nodes    (title, description, position, size, font, deleted_at)
@@ -53,9 +63,16 @@ Editing a diagram is allowed for:
 2. admins of the participatory space holding the component,
 3. users with an explicit row in `decidim_causal_loop_editors`.
 
-Everyone else gets a read-only view: zoom, fit and export still work, and an
-on-page notice explains why editing is unavailable. Grant explicit editors in
-the admin panel under the component's **Editors** screen.
+Everyone else gets a read-only view: zoom, loops, saving and export still
+work, and an on-page notice explains why editing is unavailable. Grant
+explicit editors under **Manage** on the component in the admin, which opens
+**Diagram editors**.
+
+Reading follows Decidim: `Decidim::Components::BaseController` refuses
+unpublished components (except to admins) and private spaces (except to
+members). Components in the admin's trash are still routed by Decidim, so
+`CausalLoop::ApplicationController` answers 404 for them itself.
+`spec/requests/decidim/causal_loop/access_spec.rb` covers all of this.
 
 ### AI assistant
 
@@ -76,6 +93,22 @@ Optional. Interchangeable providers behind one interface
 Selection: the first configured of Anthropic, OpenAI-compatible, Ollama; else a
 503 explaining how to set one up. `CAUSAL_LOOP_AI_PROVIDER` forces one. See the
 README for configuration, including the git-ignored key files.
+
+The agent's tools work on the database directly (`list_graph`,
+`find_loops`, `create_node(s)`, `update_node`, `delete_node`,
+`create_link(s)`, `update_link`, `delete_link`, `clear_diagram`) and return a
+list of actions the Stimulus controller applies to the canvas and records as
+one undoable step. Titles are matched with `Node.title_key` (ignoring case
+and punctuation), so asking for an existing variable reuses it.
+
+The batch tools exist because small local models such as gpt-oss make
+exactly one tool call per round. With single-item tools only, a 12-node,
+23-link diagram needed ~40 rounds and hit the cap after 3 nodes; with batch
+tools it takes 3–4. The model cannot choose node positions: it placed nodes
+100 px apart, overlapping them, so placement is always automatic.
+`clear_diagram` only marks the old diagram; the editor asks before deleting
+it. `find_loops` uses `LoopFinder`, since models are unreliable at finding
+cycles themselves.
 
 ### Example diagram
 
@@ -104,18 +137,6 @@ one reinforcing and one balancing loop:
 The seeds also grant the seeded participant (`user@example.org`) an editor
 row, so the Editors mechanism is visible without having to be discovered.
 See `lib/decidim/causal_loop/seeds.rb`.
-
-The agent calls the same database operations the frontend uses
-(`create_node`, `create_link`, `update_node`, `update_link`, `delete_node`,
-`delete_link`, `list_graph`) and returns a list of actions the Stimulus
-controller applies to the live Cytoscape graph.
-
-It also has batch tools — `create_nodes`, `create_links` (nodes referenced by
-title or ID) and `clear_diagram` — because small local models such as
-gpt-oss make exactly one tool call per round. With single-item tools only, a
-12-node, 23-link diagram needed ~40 rounds and hit the cap after 3 nodes; with
-batch tools it takes 3–4. The model cannot choose node positions: it placed
-nodes 100 px apart, overlapping them, so placement is always automatic.
 
 ---
 
@@ -153,8 +174,25 @@ bin/rails server
 Seeds create `admin@example.org` / `decidim123456789`.
 
 Add the component to a participatory space through
-**Admin → (space) → Components → Add component → Causal Loop**, then publish
+**Admin → (space) → Components → Add component → CausalLoop**, then publish
 it.
+
+### Running the specs
+
+From the module, once, generate the dummy app the specs run against (the
+`Rakefile` overrides Decidim's `test_app` to install `cytoscape` and the
+module's migrations first), then run them:
+
+```bash
+bundle exec rake test_app
+bundle exec rspec
+```
+
+Specs cover the request endpoints, the services, permissions and access
+(unpublished, private, trashed), the seeds, the editor in headless Chrome
+(`spec/system/diagram_editor_spec.rb`, with a fake AI agent) and the admin
+screens (`spec/system/admin_manages_diagram_spec.rb`). CI runs them on every
+push to `main`.
 
 ---
 
@@ -170,6 +208,11 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 | `You can only call prepend_javascript_pack_tag before javascript_pack_tag` | Use `prepend_javascript_pack_tag`, not `javascript_pack_tag`, in component views. |
 | Component tab missing from the space's public page | The component is not published — publish it in the admin panel. |
 | Asset manifest missing | Run `./bin/shakapacker`, then restart Rails. |
+| JavaScript changes don't take effect after a rebuild and reload | Decidim's service worker caches `/decidim-packs/` by URL, and development bundles are unhashed. Set `useContentHash: true` under `development:` in the host's `config/shakapacker.yml`. |
+| A new route 404s in development | Engine routes don't reload; restart the server. |
+| A link with `target="_blank"` goes to a "you are leaving the site" page | Decidim rewrites every `target="_blank"` link to `/link?external_url=…`, even internal ones. Use plain links. |
+| A `keydown` listener on `document` never sees Escape | The editor's key handler runs in the capture phase and stops Escape. Register other Escape listeners in the capture phase too. |
+| A trashed component is still reachable by URL | Decidim's router finds trashed components (`with_deleted`) and leaves hiding them to each component. See Permissions. |
 
 ---
 
@@ -205,10 +248,14 @@ In this order. Each step adds specs for what it changes.
      same cycle detection.
 4. **Undo/redo.** ✅ See "Undo/redo" below.
 5. **Save to file and load from file.** ✅ A full-fidelity file (titles,
-   positions, sizes, fonts, polarity, bends), unlike today's exports, and an
-   import that replaces the diagram or adds to it. After undo/redo so that a
-   load can be undone. Today's backups use `../backups/restore.rb`, outside
-   the repo.
+   positions, sizes, fonts, polarity, bends) and a load that replaces the
+   diagram or adds it beside, merging variables with the same name. Undoable.
+   Replaced Export JSON, whose files still load.
+Also done: **Diagram help** panel; **integration specs** for the CoP site
+(admin screens, permissions, access, seeds), which found and fixed an
+unreachable Editors screen, missing translations and readable trashed
+components.
+
 6. **Streaming AI replies.** Show the reply as it is written instead of
    "Thinking…" for up to a minute. Needs a streaming response (SSE or
    ActionController::Live) that also reports tool calls as they happen, and
@@ -216,7 +263,16 @@ In this order. Each step adds specs for what it changes.
    deep.
 
 **Marcello:** deploying to the Rurbanive CoP Decidim instance, and Decidim
-integration (search, activity feed, linking from proposals).
+integration (search, activity feed, linking from proposals). First: which
+Decidim version the CoP site runs. The gemspec pins `decidim-core` to exactly
+0.31.3, so any other version needs the pin loosened and CI run against it.
+
+**Open questions:**
+- The component is listed as "CausalLoop" under Add component (from
+  `config/locales/en.yml`); probably should read "Causal loop diagram".
+- The README's Security section still has a placeholder address.
+- Interface text is English only; translations would need the strings moved
+  into `config/locales`.
 
 **Later:**
 - **AI conversation on the server.** Store conversations per user and
