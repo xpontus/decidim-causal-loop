@@ -39,6 +39,10 @@ export default class extends Controller {
       }
     });
 
+    // Recompute the wrapped label and box size whenever a node is added or
+    // its title, size or font changes, wherever the change came from.
+    this.cy.on("add data", "node", (evt) => this.refreshLabel(evt.target));
+
     if (this.editableValue) this.setupEditing();
     this.setupViewControls();
     if (this.editableValue) this.setupChat();
@@ -50,16 +54,16 @@ export default class extends Controller {
         selector: "node",
         style: {
           "background-color": "#4a90d9",
-          "label": "data(label)",
+          "label": "data(displayLabel)",
           "color": "#fff",
           "text-valign": "center",
           "text-halign": "center",
-          "width": "data(width)",
-          "height": "data(height)",
+          "width": "data(displayWidth)",
+          "height": "data(displayHeight)",
           "font-size": "data(fontSize)",
           "shape": "round-rectangle",
           "text-wrap": "wrap",
-          "text-max-width": "data(textMaxWidth)"
+          "text-max-width": "data(displayWidth)"
         }
       },
       { selector: "node:selected",   style: { "border-width": 3, "border-color": "#f0a500" } },
@@ -97,7 +101,11 @@ export default class extends Controller {
           "text-background-padding": "2px"
         }
       },
-      { selector: "edge:selected", style: { "width": 4 } }
+      { selector: "edge:selected", style: { "width": 4 } },
+      {
+        selector: "edge.cl-flash",
+        style: { "width": 5, "underlay-color": "#f0a500", "underlay-opacity": 0.6, "underlay-padding": 6 }
+      }
     ];
   }
 
@@ -110,9 +118,9 @@ export default class extends Controller {
         width:       n.width      ?? 130,
         height:      n.height     ?? 44,
         fontSize:    n.font_size  ?? 13,
-        textMaxWidth: (n.width ?? 130) - 10
+        ...this.labelLayout(n.title, n.width ?? 130, n.height ?? 44, n.font_size ?? 13)
       },
-      position: { x: n.position_x || 150, y: n.position_y || 150 }
+      position: { x: n.position_x ?? 150, y: n.position_y ?? 150 }
     }));
     const edges = this.linksValue.map(l => ({
       data: {
@@ -126,6 +134,52 @@ export default class extends Controller {
       }
     }));
     return [...nodes, ...edges];
+  }
+
+  // ---- Node labels ----
+
+  // Lays a title out on as many lines as needed to fit the node's width,
+  // breaking at spaces first and, inside a long word, at CamelCase, "_" and
+  // "-" boundaries ("GovernmentRegulation" → "Government\nRegulation"). The box
+  // grows when a piece still does not fit, or when the lines need more height.
+  // The stored width and height are minimums; they are not changed.
+  labelLayout(title, width, height, fontSize) {
+    const padding = 16;
+    const maxText = width - padding;
+    this.measureCtx ||= document.createElement("canvas").getContext("2d");
+    this.measureCtx.font = `${fontSize}px "Helvetica Neue", Helvetica, sans-serif`;
+    const measure = (text) => this.measureCtx.measureText(text).width;
+
+    const lines = [];
+    let line = "";
+    for (const word of String(title ?? "").split(/\s+/).filter(Boolean)) {
+      const joined = line ? `${line} ${word}` : word;
+      if (measure(joined) <= maxText) { line = joined; continue; }
+      if (line) { lines.push(line); line = ""; }
+      if (measure(word) <= maxText) { line = word; continue; }
+
+      for (const piece of word.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[_-])/)) {
+        if (!line || measure(line + piece) <= maxText) { line += piece; continue; }
+        lines.push(line);
+        line = piece;
+      }
+    }
+    if (line) lines.push(line);
+    if (lines.length === 0) lines.push("");
+
+    const textWidth = Math.max(...lines.map(measure));
+    return {
+      displayLabel:  lines.join("\n"),
+      displayWidth:  Math.max(width, Math.ceil(textWidth) + padding),
+      displayHeight: Math.max(height, Math.ceil(lines.length * fontSize * 1.25) + 14)
+    };
+  }
+
+  refreshLabel(node) {
+    const layout = this.labelLayout(node.data("label"), node.data("width") ?? 130,
+                                    node.data("height") ?? 44, node.data("fontSize") ?? 13);
+    // Only write when something changed: writing fires another "data" event.
+    if (Object.keys(layout).some(key => node.data(key) !== layout[key])) node.data(layout);
   }
 
   // Apply unbundled-bezier style with two control points to an edge
@@ -156,8 +210,7 @@ export default class extends Controller {
       clearTimeout(this.edgeTapTimer);
       this.edgeTapTimer = setTimeout(() => {
         const newPolarity = edge.data("polarity") === "positive" ? "negative" : "positive";
-        edge.data("polarity", newPolarity);
-        this.updateLink(edge.data("dbId"), { polarity: newPolarity });
+        this.setPolarity(edge, newPolarity, { notify: true });
       }, 300);
     });
 
@@ -275,7 +328,7 @@ export default class extends Controller {
     layout.one("layoutstop", () => {
       const boxes = this.cy.nodes().map(n => ({
         node: n, x: n.position("x"), y: n.position("y"),
-        w: n.data("width") ?? 130, h: n.data("height") ?? 44
+        w: n.data("displayWidth") ?? 130, h: n.data("displayHeight") ?? 44
       }));
       this.scaleToCanvas(boxes);
       this.removeOverlaps(boxes);
@@ -487,6 +540,51 @@ export default class extends Controller {
     this.updateStatus("");
   }
 
+  // A click on a link flips its sign, which is easy to do by accident, so the
+  // link flashes and a toast offers to undo the change.
+  setPolarity(edge, polarity, { notify = false } = {}) {
+    const previous = edge.data("polarity");
+    edge.data("polarity", polarity);
+    this.updateLink(edge.data("dbId"), { polarity });
+    if (!notify) return;
+
+    edge.flashClass("cl-flash", 1500);
+    const sign = polarity === "positive" ? "+" : "−";
+    this.showToast(`${edge.source().data("label")} → ${edge.target().data("label")} is now ${sign}`, {
+      actionLabel: "Undo",
+      action: () => { if (edge.inside()) this.setPolarity(edge, previous); }
+    });
+  }
+
+  // A short message at the bottom of the canvas, with an optional button.
+  showToast(message, { actionLabel = null, action = null, duration = 6000 } = {}) {
+    this.toast?.remove();
+    clearTimeout(this.toastTimer);
+
+    const toast = document.createElement("div");
+    toast.className = "cl-toast";
+    toast.setAttribute("role", "status");
+    const text = document.createElement("span");
+    text.textContent = message;
+    toast.appendChild(text);
+    if (actionLabel && action) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = actionLabel;
+      button.addEventListener("click", () => { action(); this.hideToast(); });
+      toast.appendChild(button);
+    }
+    this.cyContainer.appendChild(toast);
+    this.toast = toast;
+    this.toastTimer = setTimeout(() => this.hideToast(), duration);
+  }
+
+  hideToast() {
+    clearTimeout(this.toastTimer);
+    this.toast?.remove();
+    this.toast = null;
+  }
+
   // ---- Two bend handles ----
 
   showBendHandles(edge) {
@@ -622,8 +720,7 @@ export default class extends Controller {
           dbId:        n.id,
           width:       n.width     ?? 130,
           height:      n.height    ?? 44,
-          fontSize:    n.font_size ?? 13,
-          textMaxWidth: (n.width ?? 130) - 10
+          fontSize:    n.font_size ?? 13
         },
         position: { x: n.position_x, y: n.position_y }
       });
@@ -675,9 +772,7 @@ export default class extends Controller {
     this.cy.$("node:selected").forEach(n => {
       const w = Math.max(60,  (n.data("width")  ?? 130) + dw);
       const h = Math.max(24,  (n.data("height") ?? 44)  + dh);
-      n.data("width",  w);
-      n.data("height", h);
-      n.data("textMaxWidth", w - 10);
+      n.data({ width: w, height: h });
       this.updateNode(n.data("dbId"), { width: w, height: h });
     });
   }
@@ -862,6 +957,11 @@ export default class extends Controller {
 
     this.setupChatResize();
 
+    const messages = this.element.querySelector("#cl-chat-messages");
+    this.chatGreeting = messages?.innerHTML ?? "";
+    this.restoreChat();
+    this.element.querySelector("#cl-chat-clear")?.addEventListener("click", () => this.clearChat());
+
     send?.addEventListener("click", () => this.sendChatMessage());
     input?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.sendChatMessage(); }
@@ -935,6 +1035,10 @@ export default class extends Controller {
     try { window.localStorage.setItem(`causalLoop.${key}`, String(value)); } catch { /* ignore */ }
   }
 
+  removePreference(key) {
+    try { window.localStorage.removeItem(`causalLoop.${key}`); } catch { /* ignore */ }
+  }
+
   async sendChatMessage() {
     const input = this.element.querySelector("#cl-chat-input");
     const send  = this.element.querySelector("#cl-chat-send");
@@ -958,6 +1062,7 @@ export default class extends Controller {
       if (resp.ok) {
         const data = await resp.json();
         this.chatHistory = data.history || [];
+        this.saveChat();
         this.appendChatMessage("assistant", data.reply || "(no reply)");
         if (data.actions?.length) this.applyActions(data.actions);
       } else {
@@ -972,6 +1077,35 @@ export default class extends Controller {
       if (send) send.disabled = false;
       input.focus();
     }
+  }
+
+  // The conversation is kept in browser storage, per diagram, so it
+  // survives a reload. Only the last turns are kept: the whole history is
+  // sent with every request, and a long one slows the model down.
+  get chatStorageKey() {
+    return `chat:${this.conversationsUrlValue}`;
+  }
+
+  saveChat() {
+    this.chatHistory = this.chatHistory.slice(-40);
+    this.writePreference(this.chatStorageKey, JSON.stringify(this.chatHistory));
+  }
+
+  restoreChat() {
+    let history = [];
+    try { history = JSON.parse(this.readPreference(this.chatStorageKey) || "[]"); } catch { history = []; }
+    if (!Array.isArray(history)) return;
+
+    this.chatHistory = history.filter(m => ["user", "assistant"].includes(m?.role) && typeof m.content === "string");
+    this.chatHistory.forEach(m => this.appendChatMessage(m.role, m.content));
+  }
+
+  clearChat() {
+    this.chatHistory = [];
+    this.removePreference(this.chatStorageKey);
+    const messages = this.element.querySelector("#cl-chat-messages");
+    if (messages) messages.innerHTML = this.chatGreeting;
+    this.element.querySelector("#cl-chat-input")?.focus();
   }
 
   appendChatMessage(role, text) {
@@ -999,7 +1133,7 @@ export default class extends Controller {
               data: {
                 id: `n${action.id}`, label: action.title, dbId: action.id,
                 width: action.width ?? 130, height: action.height ?? 44,
-                fontSize: action.font_size ?? 13, textMaxWidth: (action.width ?? 130) - 10
+                fontSize: action.font_size ?? 13
               },
               position: { x: action.position_x, y: action.position_y }
             });
@@ -1064,6 +1198,7 @@ export default class extends Controller {
     if (this.onPreviewMove) document.removeEventListener("mousemove", this.onPreviewMove);
     this.removeBendHandles();
     this.chatResizeObserver?.disconnect();
+    this.hideToast();
     document.documentElement.classList.remove("cl-full-view");
     this.cy?.destroy();
   }

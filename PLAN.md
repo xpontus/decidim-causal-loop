@@ -183,9 +183,8 @@ In this order. Each step adds specs for what it changes.
      and show a toast ("Mining → IslandIncome is now −  [Undo]"). The Undo
      later moves into the general undo system (step 4).
    - **Clear chat** button in the AI panel header.
-   - **Keep the AI conversation across reloads.** Start with browser storage
-     (per browser, per diagram). Server-side storage per user and diagram is
-     the later option, if it should follow people across devices.
+   - **Keep the AI conversation across reloads,** in browser storage (per
+     browser, per diagram). Server-side storage is listed under "Later".
 2. **Editor specs.** System specs (Capybara with headless Chrome, already
    provided by decidim-dev and set up in CI) for the editor's JavaScript:
    add, rename, move and delete nodes; links and polarity; auto-layout; the
@@ -215,6 +214,11 @@ In this order. Each step adds specs for what it changes.
 
 **Marcello:** deploying to the Rurbanive CoP Decidim instance, and Decidim
 integration (search, activity feed, linking from proposals).
+
+**Later:**
+- **AI conversation on the server.** Store conversations per user and
+  diagram, so they follow people across devices and could be shown to other
+  editors. Step 1 keeps them in browser storage only.
 
 **Parked:**
 - More AI providers (Gemini, Azure OpenAI): until one is needed.

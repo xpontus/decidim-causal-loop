@@ -23,7 +23,8 @@
   .cl-workspace--right #cl-chat { width:var(--cl-chat-width); height:100%; }
   .cl-workspace--below #cl-chat { height:var(--cl-chat-height); min-height:160px; margin-top:0.75rem; resize:vertical; overflow:hidden; }
   #cl-chat-header { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; border-bottom:1px solid #eee; font-size:0.85rem; font-weight:600; }
-  #cl-chat-header button { margin:0 0 0 auto; }
+  #cl-chat-header button { margin:0; }
+  #cl-chat-header button:first-of-type { margin-left:auto; }
   #cl-chat-messages { flex:1; min-height:0; overflow-y:auto; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem; }
   .cl-msg { padding:0.45rem 0.7rem; border-radius:8px; font-size:0.85rem; line-height:1.4; max-width:90%; white-space:pre-wrap; word-break:break-word; }
   .cl-msg--user      { align-self:flex-end; background:#4a90d9; color:#fff; }
@@ -52,6 +53,10 @@
   .cl-editor.is-full-view .cl-workspace--below #cy { flex:1; min-height:200px; height:auto; }
   .cl-editor .cl-full-view-title { display:none; }
   .cl-editor.is-full-view .cl-full-view-title { display:inline; font-weight:600; margin-right:0.5rem; }
+
+  .cl-toast { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:30; display:flex; align-items:center; gap:0.75rem; padding:0.5rem 0.85rem; border-radius:6px; background:#333; color:#fff; font-size:0.85rem; box-shadow:0 2px 10px rgba(0,0,0,0.3); }
+  .cl-toast button { margin:0; padding:0.15rem 0.6rem; border:1px solid #fff; border-radius:4px; background:transparent; color:#fff; font-weight:600; cursor:pointer; }
+  .cl-toast button:hover { background:rgba(255,255,255,0.15); }
 
   #cl-confirm { max-width:28rem; padding:1.25rem; border:1px solid #ccc; border-radius:6px; box-shadow:0 8px 30px rgba(0,0,0,0.2); }
   #cl-confirm::backdrop { background:rgba(0,0,0,0.35); }
@@ -141,6 +146,7 @@
           <div id="cl-chat">
             <div id="cl-chat-header">
               <span>&#x1F916; AI Assistant</span>
+              <button type="button" id="cl-chat-clear" class="button hollow tiny" title="Start a new conversation">Clear chat</button>
               <button type="button" id="cl-chat-position" class="button hollow tiny" title="Move the panel">Move below</button>
             </div>
             <div id="cl-chat-messages">

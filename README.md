@@ -65,9 +65,11 @@ Space.
 - Each variable has only a title. There is nowhere to add a description or
   notes, and links cannot carry text labels.
 - Every node looks the same. You can't colour, group or categorise
-  variables.
+  variables. Long titles wrap onto several lines, breaking at spaces or
+  inside CamelCase names, and the box grows to fit.
 - New links always start as positive. Clicking a link switches its polarity,
-  so a stray click can flip a sign.
+  so a stray click can flip a sign; the link flashes and a message offers to
+  undo it for a few seconds.
 - Diagrams cannot be imported. The JSON and GraphML exports leave out
   layout details: GraphML has no positions, and neither format includes node
   sizes, fonts or link curves. Use them for analysis in other tools, not as
@@ -101,7 +103,9 @@ Space.
 - Its changes take effect immediately, without asking for confirmation, and
   can include deletions. The exception is replacing the whole diagram: the
   editor asks before the previous diagram is deleted.
-- The conversation is not saved. Reloading the page clears it.
+- The conversation is kept only in your browser (per diagram), so it
+  survives a reload but not a switch to another computer, and other editors
+  cannot see it. **Clear chat** starts over.
 - Each request is limited to 25 rounds of tool calls. The assistant can
   create many variables or links in one round, so a whole starter diagram
   usually takes a handful. If it runs out, it says so; reply "continue".
