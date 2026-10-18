@@ -29,6 +29,9 @@ Space.
   (or below it), and can be resized.
 - **Saved as you go.** Every change is saved to the server as you
   make it. There is no separate save step.
+- **Undo and redo.** The Undo and Redo buttons, or <kbd>Ctrl/⌘+Z</kbd> and
+  <kbd>Ctrl/⌘+Shift+Z</kbd>, step back and forward through your changes,
+  including deletions, auto-layout, and a whole AI assistant reply.
 - **Edit and view permissions.** Organization admins, admins of the
   participatory space, and users granted access under the component's
   **Editors** screen can edit. Everyone else who can see the component can
@@ -55,9 +58,10 @@ Space.
 - No real-time collaboration. When several editors work at once, nobody sees
   anyone else's changes until they reload the page. If two people change the
   same thing, the last save wins.
-- No undo, no version history, and no record of who changed what. Deleting
-  a variable deletes all of its links immediately, without asking for
-  confirmation.
+- Undo covers only your own changes since you opened the page; reloading
+  clears it. There is no version history and no record of who changed what.
+  If another editor has changed or deleted something since, undoing your
+  change to it fails with a message.
 - Editing rights cover the whole diagram. An editor can change or delete
   anything, including other people's work. Participants without edit rights
   cannot suggest changes or comment on the diagram.
@@ -103,8 +107,9 @@ Space.
 - It can add, rename and delete variables and links and change polarity. It
   cannot move or resize nodes or bend links.
 - Its changes take effect immediately, without asking for confirmation, and
-  can include deletions. The exception is replacing the whole diagram: the
-  editor asks before the previous diagram is deleted.
+  can include deletions. **Undo** reverses a whole reply in one step. When
+  it replaces the whole diagram, the editor first asks before deleting the
+  previous one, and that deletion is a separate step to undo.
 - The conversation is kept only in your browser (per diagram), so it
   survives a reload but not a switch to another computer, and other editors
   cannot see it. **Clear chat** starts over.
@@ -131,6 +136,15 @@ And then execute:
 
 ```bash
 bundle
+bin/rails decidim_causal_loop:install:migrations db:migrate
+```
+
+Deleted variables and links are kept, hidden, so that they can be restored
+by undo. To remove those deleted more than 30 days ago, run this regularly
+(for example daily from cron); `DAYS=7` changes the age:
+
+```bash
+bin/rails decidim_causal_loop:purge_deleted
 ```
 
 ## AI assistant

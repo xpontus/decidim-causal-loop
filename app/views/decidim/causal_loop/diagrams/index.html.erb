@@ -4,6 +4,7 @@
   .cl-toolbar .button:hover { opacity: 0.85 !important; filter: brightness(0.9); }
   .cl-toolbar .button.hollow:hover { background-color: transparent !important; }
   .cl-toolbar .button.hollow { color: inherit; }
+  .cl-toolbar .button:disabled { opacity: 0.4 !important; cursor: default; filter: none; }
 
   /* Canvas and AI panel. The panel sits to the right of the canvas, resized
      by dragging the splitter between them, or below it, resized by the
@@ -90,11 +91,14 @@
       data-causal-loop-editor-links-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).links_path %>"
       data-causal-loop-editor-conversations-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).agent_path %>"
       data-causal-loop-editor-loops-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).loops_path %>"
+      data-causal-loop-editor-operations-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).operations_path %>"
       data-causal-loop-editor-editable-value="<%= @editable %>"
       data-causal-loop-editor-csrf-token-value="<%= form_authenticity_token %>"
     >
       <% if @editable %>
         <div class="cl-toolbar" style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" id="btn-undo" class="button hollow small" title="Nothing to undo" disabled>&#x21B6; Undo</button>
+          <button type="button" id="btn-redo" class="button hollow small" title="Nothing to redo" disabled>&#x21B7; Redo</button>
           <button type="button" id="btn-add-node" class="button button--sc small">+ Add node</button>
           <button type="button" id="btn-add-link" class="button button--secondary small">&#8594; Add link</button>
           <button type="button" id="btn-delete"   class="button button--alert hollow small">&#x2715; Delete selected</button>

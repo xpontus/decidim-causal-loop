@@ -219,6 +219,85 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
       expect(page).to have_button("Full view")
     end
 
+    describe "undo and redo" do
+      let(:all_nodes) { Decidim::CausalLoop::Node.with_deleted.where(decidim_component_id: component.id) }
+
+      def canvas_labels = editor_script("return c.cy.nodes().map(n => n.data('label')).sort();")
+
+      it "undoes and redoes adding and naming a node as one step" do
+        open_editor
+        click_on "+ Add node"
+        find("#cy input[type=text]").set("Tourists").send_keys(:enter)
+        eventually { nodes.pluck(:title) == ["Tourists"] }
+        id = nodes.first.id
+
+        click_on "Undo"
+        eventually { nodes.none? }
+        expect(canvas_labels).to eq([])
+
+        click_on "Redo"
+        eventually { nodes.pluck(:id, :title) == [[id, "Tourists"]] }
+        expect(canvas_labels).to eq(["Tourists"])
+      end
+
+      it "brings back a deleted node with its links, and the same IDs" do
+        tourists = node("Tourists", 100, 100)
+        income = node("Island Income", 400, 100)
+        tourists_income = link(tourists, income)
+        open_editor
+        editor_script("c.cy.$('#n#{tourists.id}').select();")
+        click_on "Delete selected"
+        eventually { nodes.pluck(:title) == ["Island Income"] && links.none? }
+
+        click_on "Undo"
+        eventually { nodes.count == 2 && links.pluck(:id) == [tourists_income.id] }
+        expect(editor_script("return c.cy.$('#l#{tourists_income.id}').length;")).to eq(1)
+        expect(page).to have_button("Redo", disabled: false)
+      end
+
+      it "undoes a drag of several nodes with the keyboard" do
+        tourists = node("Tourists", 100, 100)
+        income = node("Island Income", 400, 100)
+        open_editor
+        editor_script(<<~JS)
+          const nodes = c.cy.nodes();
+          nodes.forEach(n => n.emit("grab"));
+          nodes.forEach(n => n.position({ x: n.position("x") + 50, y: 300 }));
+          nodes.forEach(n => n.emit("free"));
+        JS
+        eventually { tourists.reload.position_y == 300 && income.reload.position_y == 300 }
+        expect(page).to have_css("#btn-undo[title^='Undo move 2 nodes']")
+
+        find("body").send_keys([:control, "z"])
+        eventually { tourists.reload.position_x == 100 && income.reload.position_y == 100 }
+        expect(editor_script("return c.cy.$('#n#{tourists.id}').position('y');")).to eq(100)
+      end
+
+      it "undoes an auto-layout in one step" do
+        created = %w(Tourists Income Crowding).map.with_index { |t, i| node(t, 100 * i, 50) }
+        created.each_cons(2) { |a, b| link(a, b) }
+        open_editor
+        click_on "Auto-layout"
+        expect(page).to have_content("Layout saved")
+
+        click_on "Undo"
+        eventually { nodes.order(:id).pluck(:position_x, :position_y) == [[0, 50], [100, 50], [200, 50]] }
+      end
+
+      it "reports an undo that the server refuses, and drops it" do
+        tourists = node("Tourists", 100, 100)
+        open_editor
+        editor_script("c.cy.$('#n#{tourists.id}').select();")
+        click_on "Delete selected"
+        eventually { nodes.none? }
+        all_nodes.delete_all
+
+        click_on "Undo"
+        expect(page).to have_css(".cl-toast", text: "Could not undo delete “Tourists”")
+        expect(page).to have_button("Undo", disabled: true)
+      end
+    end
+
     describe "the AI assistant" do
       let(:reply) { "Built a new diagram." }
       let(:tool_calls) { [] }
@@ -231,6 +310,8 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         open_editor
         click_on "AI Assistant"
       end
+
+      def canvas_labels = editor_script("return c.cy.nodes().map(n => n.data('label')).sort();")
 
       def ask(message)
         find_by_id("cl-chat-input").set(message)
@@ -281,6 +362,19 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
           eventually { nodes.pluck(:title).sort == %w(Crowding Tourists) }
           expect(links.count).to eq(1)
           expect(editor_script("return c.cy.nodes().map(n => n.data('label')).sort();")).to eq(%w(Crowding Tourists))
+        end
+
+        it "undoes the reply and the deletion separately" do
+          ask("Start a new diagram")
+          within("#cl-confirm") { click_on "Delete them" }
+          eventually { nodes.pluck(:title).sort == %w(Crowding Tourists) }
+
+          click_on "Undo"
+          eventually { nodes.pluck(:title).sort == ["Crowding", "Old idea", "Tourists"] }
+          expect(page).to have_css("#btn-undo[title^='Undo AI: “Start a new diagram”']")
+          click_on "Undo"
+          eventually { nodes.pluck(:title) == ["Old idea"] && links.none? }
+          expect(canvas_labels).to eq(["Old idea"])
         end
 
         it "keeps the old diagram if the user declines" do

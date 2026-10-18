@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus";
 import cytoscape from "cytoscape";
+import CommandManager from "./command_manager";
 
 export default class extends Controller {
   static values = {
@@ -9,6 +10,7 @@ export default class extends Controller {
     linksUrl: String,
     conversationsUrl: String,
     loopsUrl: String,
+    operationsUrl: String,
     editable: Boolean,
     csrfToken: String
   }
@@ -120,19 +122,28 @@ export default class extends Controller {
   }
 
   buildElements() {
-    const nodes = this.nodesValue.map(n => ({
+    return [...this.nodesValue.map(n => this.nodeElement(n)), ...this.linksValue.map(l => this.linkElement(l))];
+  }
+
+  // Canvas elements from records in the server's format, which is also the
+  // format of the snapshots that undo uses to bring deleted elements back.
+  nodeElement(n) {
+    return {
       data: {
-        id:          `n${n.id}`,
-        label:       n.title,
-        dbId:        n.id,
-        width:       n.width      ?? 130,
-        height:      n.height     ?? 44,
-        fontSize:    n.font_size  ?? 13,
+        id:       `n${n.id}`,
+        label:    n.title,
+        dbId:     n.id,
+        width:    n.width     ?? 130,
+        height:   n.height    ?? 44,
+        fontSize: n.font_size ?? 13,
         ...this.labelLayout(n.title, n.width ?? 130, n.height ?? 44, n.font_size ?? 13)
       },
       position: { x: n.position_x ?? 150, y: n.position_y ?? 150 }
-    }));
-    const edges = this.linksValue.map(l => ({
+    };
+  }
+
+  linkElement(l) {
+    return {
       data: {
         id:          `l${l.id}`,
         source:      `n${l.source_node_id}`,
@@ -142,8 +153,22 @@ export default class extends Controller {
         cp1Distance: l.cp1_distance ?? 0,
         cp2Distance: l.cp2_distance ?? 0
       }
-    }));
-    return [...nodes, ...edges];
+    };
+  }
+
+  nodeSnapshot(node) {
+    const pos = node.position();
+    return {
+      id: node.data("dbId"), title: node.data("label"), position_x: pos.x, position_y: pos.y,
+      width: node.data("width"), height: node.data("height"), font_size: node.data("fontSize")
+    };
+  }
+
+  linkSnapshot(edge) {
+    return {
+      id: edge.data("dbId"), source_node_id: edge.source().data("dbId"), target_node_id: edge.target().data("dbId"),
+      polarity: edge.data("polarity"), cp1_distance: edge.data("cp1Distance"), cp2_distance: edge.data("cp2Distance")
+    };
   }
 
   // ---- Node labels ----
@@ -200,6 +225,7 @@ export default class extends Controller {
   }
 
   setupEditing() {
+    this.setupUndo();
     this.cy.on("mouseover", "node", (evt) => { this.hoveredNode = evt.target; });
     this.cy.on("mouseout",  "node", () =>     { this.hoveredNode = null; });
 
@@ -265,17 +291,29 @@ export default class extends Controller {
       this.removeBendHandles();
     });
 
-    // Save position after drag
-    this.cy.on("dragfree", "node", (evt) => {
-      const node = evt.target;
-      const pos  = node.position();
-      this.updateNode(node.data("dbId"), { position_x: pos.x, position_y: pos.y });
-      this.removeBendHandles();
+    // Save positions after a drag, as one step however many nodes moved.
+    // Cytoscape fires grab and free once per dragged node, so the positions
+    // are noted at the first grab and compared once all are released.
+    this.cy.on("grab", "node", () => {
+      this.dragStart ||= new Map(this.cy.nodes().map(n => [n.id(), { ...n.position() }]));
+    });
+    this.cy.on("free", "node", () => {
+      clearTimeout(this.dragTimer);
+      this.dragTimer = setTimeout(() => this.finishDrag(), 0);
     });
 
     // Keyboard
     this.onKeyDown = (e) => {
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === "z" || key === "y") {
+          e.preventDefault();
+          if (key === "z" && !e.shiftKey) this.undo();
+          else this.redo();
+        }
+        return;
+      }
       if ((e.key === "c" || e.key === "C") && !this.cLinkMode && this.hoveredNode) {
         this.startCLink(this.hoveredNode);
       }
@@ -305,6 +343,156 @@ export default class extends Controller {
     this.element.querySelector("#btn-layout")?.addEventListener("click", () => this.autoLayout());
   }
 
+  // ---- Undo and redo ----
+
+  // Every edit is a list of operations on the server and the canvas, with
+  // its inverse: { op: "update", type, id, attrs }, { op: "delete", type,
+  // id } and { op: "restore", type, id, snapshot }. Deleting only marks a
+  // record on the server, so records keep their IDs and the inverse of a
+  // delete is a restore. Each list is sent as one request and applied in one
+  // transaction.
+  setupUndo() {
+    this.undoButton = this.element.querySelector("#btn-undo");
+    this.redoButton = this.element.querySelector("#btn-redo");
+    this.commands = new CommandManager({
+      onChange: () => this.updateUndoButtons(),
+      onError: (error, command, action) => {
+        const verb = { do: "Could not", undo: "Could not undo", redo: "Could not redo" }[action];
+        this.showToast(`${verb} ${command.label}: ${error.message}. Reload the page to see the current diagram.`,
+                       { duration: 10000 });
+      }
+    });
+    this.undoButton?.addEventListener("click", () => this.undo());
+    this.redoButton?.addEventListener("click", () => this.redo());
+    this.updateUndoButtons();
+  }
+
+  undo() {
+    this.removeBendHandles();
+    this.hideToast();
+    return this.commands.undo();
+  }
+
+  redo() {
+    this.removeBendHandles();
+    this.hideToast();
+    return this.commands.redo();
+  }
+
+  updateUndoButtons() {
+    const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+    if (this.undoButton) {
+      this.undoButton.disabled = !this.commands.canUndo;
+      this.undoButton.title = this.commands.undoLabel ? `Undo ${this.commands.undoLabel} (${shortcut}Z)` : "Nothing to undo";
+    }
+    if (this.redoButton) {
+      this.redoButton.disabled = !this.commands.canRedo;
+      this.redoButton.title = this.commands.redoLabel ? `Redo ${this.commands.redoLabel} (${shortcut}Shift+Z)` : "Nothing to redo";
+    }
+  }
+
+  updateOp(type, id, attrs) { return { op: "update", type, id, attrs }; }
+
+  deleteOp(type, id) { return { op: "delete", type, id }; }
+
+  restoreOp(type, snapshot) { return { op: "restore", type, id: snapshot.id, snapshot }; }
+
+  // A command from operations and their inverse, in the order each is to be
+  // applied.
+  change(label, forward, backward) {
+    return {
+      label, forward, backward,
+      do:   () => this.applyOperations(forward),
+      undo: () => this.applyOperations(backward)
+    };
+  }
+
+  // One step made of several changes; undone in reverse order.
+  combine(label, changes) {
+    return this.change(label, changes.flatMap(c => c.forward), changes.slice().reverse().flatMap(c => c.backward));
+  }
+
+  updateChange(label, type, id, before, after) {
+    return this.change(label, [this.updateOp(type, id, after)], [this.updateOp(type, id, before)]);
+  }
+
+  // Deleting nodes deletes their links too; these are deleted explicitly
+  // first, so undo knows exactly what to bring back.
+  deleteChange(label, nodes, edges = this.cy.collection()) {
+    const links = edges.union(nodes.connectedEdges());
+    return this.change(label,
+      [...links.map(e => this.deleteOp("link", e.data("dbId"))), ...nodes.map(n => this.deleteOp("node", n.data("dbId")))],
+      [...nodes.map(n => this.restoreOp("node", this.nodeSnapshot(n))), ...links.map(e => this.restoreOp("link", this.linkSnapshot(e)))]);
+  }
+
+  async applyOperations(operations, { canvas = true } = {}) {
+    const resp = await this.apiRequest(this.operationsUrlValue, "POST", {
+      operations: operations.map(({ snapshot, ...operation }) => operation)
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error((body.errors || []).join(", ") || `error ${resp.status}`);
+    }
+    if (canvas) operations.forEach(operation => this.applyToCanvas(operation));
+  }
+
+  applyToCanvas({ op, type, id, attrs, snapshot }) {
+    const element = this.cy.getElementById(`${type === "node" ? "n" : "l"}${id}`);
+    if (op === "update" && element.length) {
+      if (type === "node") this.setNodeAttributes(element, attrs);
+      else this.setLinkAttributes(element, attrs);
+    } else if (op === "delete") {
+      if (this.bendHandle && element.union(element.connectedEdges()).contains(this.bendHandle.edge)) this.removeBendHandles();
+      element.remove();
+    } else if (op === "restore" && !element.length) {
+      if (type === "node") this.cy.add(this.nodeElement(snapshot));
+      else this.setLinkAttributes(this.cy.add(this.linkElement(snapshot)), snapshot);
+    }
+  }
+
+  setNodeAttributes(node, attrs) {
+    const data = {};
+    if ("title" in attrs) data.label = attrs.title;
+    if ("width" in attrs) data.width = attrs.width;
+    if ("height" in attrs) data.height = attrs.height;
+    if ("font_size" in attrs) data.fontSize = attrs.font_size;
+    if (Object.keys(data).length) node.data(data);
+    if ("position_x" in attrs || "position_y" in attrs) {
+      node.position({ x: attrs.position_x ?? node.position("x"), y: attrs.position_y ?? node.position("y") });
+    }
+  }
+
+  setLinkAttributes(edge, attrs) {
+    if ("polarity" in attrs) edge.data("polarity", attrs.polarity);
+    if ("cp1_distance" in attrs || "cp2_distance" in attrs) {
+      const cp1 = attrs.cp1_distance ?? edge.data("cp1Distance") ?? 0;
+      const cp2 = attrs.cp2_distance ?? edge.data("cp2Distance") ?? 0;
+      edge.data({ cp1Distance: cp1, cp2Distance: cp2 });
+      if (cp1 || cp2) this.applyBendStyle(edge, cp1, cp2);
+      else edge.removeStyle("curve-style control-point-distances control-point-weights");
+    }
+  }
+
+  finishDrag() {
+    const start = this.dragStart;
+    this.dragStart = null;
+    if (!start) return;
+    const moved = this.cy.nodes().filter(n => {
+      const from = start.get(n.id());
+      return from && (from.x !== n.position("x") || from.y !== n.position("y"));
+    });
+    if (moved.length === 0) return;
+
+    this.removeBendHandles();
+    const changes = moved.map(n => {
+      const from = start.get(n.id());
+      return this.updateChange("", "node", n.data("dbId"), { position_x: from.x, position_y: from.y },
+                               { position_x: n.position("x"), position_y: n.position("y") });
+    });
+    const label = moved.length === 1 ? `move “${moved[0].data("label")}”` : `move ${moved.length} nodes`;
+    this.commands.execute(this.combine(label, changes));
+  }
+
   // ---- Automatic layout ----
 
   // Rearranges the diagram with Cytoscape's built-in force-directed "cose"
@@ -314,7 +502,8 @@ export default class extends Controller {
   // apart, since cose treats nodes almost as points and ours are wide
   // rectangles. The layout starts from random positions, so pressing the
   // button again gives a different arrangement. Bends are reset, since they
-  // were drawn for the old positions. The result is saved.
+  // were drawn for the old positions. The result is saved, as one step that
+  // can be undone.
   autoLayout() {
     if (this.cy.nodes().length === 0) return;
     this.removeBendHandles();
@@ -342,6 +531,7 @@ export default class extends Controller {
       }));
       this.scaleToCanvas(boxes);
       this.removeOverlaps(boxes);
+      boxes.forEach(b => { b.x = Math.round(b.x); b.y = Math.round(b.y); });
 
       boxes.forEach(b => b.node.position(start.get(b.node.id())));
       this.cy.layout({
@@ -354,8 +544,7 @@ export default class extends Controller {
         stop: () => { if (this.cy.zoom() > 1) this.cy.zoom(1).center(); }
       }).run();
 
-      this.resetBends();
-      this.saveLayout(boxes);
+      this.saveLayout(boxes, start);
     });
     layout.run();
   }
@@ -407,24 +596,28 @@ export default class extends Controller {
     }
   }
 
-  resetBends() {
-    this.cy.edges().forEach(edge => {
-      if (!edge.data("cp1Distance") && !edge.data("cp2Distance")) return;
-      edge.data({ cp1Distance: 0, cp2Distance: 0 });
-      edge.removeStyle("curve-style control-point-distances control-point-weights");
-      this.updateLink(edge.data("dbId"), { cp1_distance: 0, cp2_distance: 0 });
+  // The nodes are already animating into place, so the first run only
+  // resets the bends on the canvas and saves; undo and redo move the nodes.
+  async saveLayout(boxes, start) {
+    const moves = boxes.map(b => {
+      const from = start.get(b.node.id());
+      return this.updateChange("", "node", b.node.data("dbId"), { position_x: from.x, position_y: from.y },
+                               { position_x: b.x, position_y: b.y });
     });
-  }
+    const bends = this.cy.edges().filter(e => e.data("cp1Distance") || e.data("cp2Distance")).map(e =>
+      this.updateChange("", "link", e.data("dbId"),
+                        { cp1_distance: e.data("cp1Distance"), cp2_distance: e.data("cp2Distance") },
+                        { cp1_distance: 0, cp2_distance: 0 }));
+    const command = this.combine("auto-layout", [...moves, ...bends]);
+    command.run = async () => {
+      bends.forEach(b => b.forward.forEach(operation => this.applyToCanvas(operation)));
+      await this.applyOperations(command.forward, { canvas: false });
+      this.updateStatus("Layout saved");
+      setTimeout(() => this.updateStatus(""), 3000);
+    };
 
-  async saveLayout(boxes) {
     this.updateStatus("Saving layout…");
-    const results = await Promise.all(boxes.map(b =>
-      this.apiRequest(`${this.nodesUrlValue}/${b.node.data("dbId")}`, "PATCH", {
-        node: { position_x: Math.round(b.x), position_y: Math.round(b.y) }
-      }).then(resp => resp.ok).catch(() => false)
-    ));
-    this.updateStatus(results.every(Boolean) ? "Layout saved" : "Some positions could not be saved");
-    setTimeout(() => this.updateStatus(""), 3000);
+    await this.commands.execute(command);
   }
 
   // ---- Confirmation dialog ----
@@ -471,7 +664,7 @@ export default class extends Controller {
     const confirmed = await this.confirmDialog({
       title: "Delete the previous diagram?",
       message: `The AI assistant wants to replace the diagram. Delete the ${nodes.length} earlier ` +
-               `variables and their ${linkCount} links? This cannot be undone.`,
+               `variables and their ${linkCount} links? You can undo this.`,
       confirmLabel: "Delete them",
       cancelLabel: "Keep them"
     });
@@ -480,13 +673,7 @@ export default class extends Controller {
       return;
     }
 
-    const resp = await this.apiRequest(`${this.nodesUrlValue}/destroy_many`, "DELETE", { node_ids: nodeIds });
-    if (resp.ok) {
-      this.removeBendHandles();
-      nodes.forEach(n => n.remove());
-    } else {
-      this.appendChatMessage("error", `Could not delete the previous diagram (error ${resp.status}).`);
-    }
+    await this.commands.execute(this.deleteChange("delete the previous diagram", this.cy.collection(nodes)));
   }
 
   // ---- C-key link creation ----
@@ -552,17 +739,17 @@ export default class extends Controller {
 
   // A click on a link flips its sign, which is easy to do by accident, so the
   // link flashes and a toast offers to undo the change.
-  setPolarity(edge, polarity, { notify = false } = {}) {
-    const previous = edge.data("polarity");
-    edge.data("polarity", polarity);
-    this.updateLink(edge.data("dbId"), { polarity });
-    if (!notify) return;
+  async setPolarity(edge, polarity, { notify = false } = {}) {
+    const name = `${edge.source().data("label")} → ${edge.target().data("label")}`;
+    const command = this.updateChange(`sign of ${name}`, "link", edge.data("dbId"),
+                                      { polarity: edge.data("polarity") }, { polarity });
+    await this.commands.execute(command);
+    if (!notify || this.commands.lastCommand !== command) return;
 
     edge.flashClass("cl-flash", 1500);
-    const sign = polarity === "positive" ? "+" : "−";
-    this.showToast(`${edge.source().data("label")} → ${edge.target().data("label")} is now ${sign}`, {
+    this.showToast(`${name} is now ${polarity === "positive" ? "+" : "−"}`, {
       actionLabel: "Undo",
-      action: () => { if (edge.inside()) this.setPolarity(edge, previous); }
+      action: () => { if (this.commands.lastCommand === command) this.undo(); }
     });
   }
 
@@ -639,6 +826,7 @@ export default class extends Controller {
 
       el.addEventListener("mousedown", (e) => {
         e.stopPropagation(); e.preventDefault();
+        const before = { cp1_distance: cp1, cp2_distance: cp2 };
         el.style.cursor = "grabbing";
         this.cy.userPanningEnabled(false);
         this.cy.userZoomingEnabled(false);
@@ -664,9 +852,9 @@ export default class extends Controller {
           this.cy.userZoomingEnabled(true);
           document.removeEventListener("mousemove", onMove);
           document.removeEventListener("mouseup",   onUp);
-          edge.data("cp1Distance", cp1);
-          edge.data("cp2Distance", cp2);
-          this.updateLink(edge.data("dbId"), { cp1_distance: cp1, cp2_distance: cp2 });
+          if (before.cp1_distance === cp1 && before.cp2_distance === cp2) return;
+          this.commands.execute(this.updateChange("bend link", "link", edge.data("dbId"), before,
+                                                  { cp1_distance: cp1, cp2_distance: cp2 }));
         };
 
         document.addEventListener("mousemove", onMove);
@@ -723,25 +911,18 @@ export default class extends Controller {
     });
     if (resp.ok) {
       const n = await resp.json();
-      const cyNode = this.cy.add({
-        data: {
-          id:          `n${n.id}`,
-          label:       n.title,
-          dbId:        n.id,
-          width:       n.width     ?? 130,
-          height:      n.height    ?? 44,
-          fontSize:    n.font_size ?? 13
-        },
-        position: { x: n.position_x, y: n.position_y }
-      });
-      this.startInlineEdit(cyNode);
+      const cyNode = this.cy.add(this.nodeElement(n));
+      const command = this.change("add node", [this.restoreOp("node", n)], [this.deleteOp("node", n.id)]);
+      this.commands.record(command);
+      this.startInlineEdit(cyNode, { created: command });
     } else {
       const body = await resp.json().catch(() => ({}));
       this.updateStatus(`Error: ${(body.errors || []).join(", ") || resp.status}`);
     }
   }
 
-  startInlineEdit(cyNode) {
+  // Naming a node just added is part of adding it: one undo removes it.
+  startInlineEdit(cyNode, { created = null } = {}) {
     const pos = cyNode.renderedPosition();
     const w   = cyNode.renderedWidth();
     const h   = cyNode.renderedHeight();
@@ -767,9 +948,21 @@ export default class extends Controller {
       if (saved) return;
       saved = true;
       const t = input.value.trim() || "New node";
-      cyNode.data("label", t);
-      this.updateNode(cyNode.data("dbId"), { title: t });
+      const previous = cyNode.data("label");
       input.remove();
+      if (created) {
+        created.forward[0].snapshot.title = t;
+        created.label = `add “${t}”`;
+        this.updateUndoButtons();
+      }
+      if (t === previous) return;
+      if (created) {
+        cyNode.data("label", t);
+        this.apiRequest(`${this.nodesUrlValue}/${cyNode.data("dbId")}`, "PATCH", { node: { title: t } });
+      } else {
+        this.commands.execute(this.updateChange(`rename “${previous}”`, "node", cyNode.data("dbId"),
+                                                { title: previous }, { title: t }));
+      }
     };
     input.addEventListener("blur", save);
     input.addEventListener("keydown", (e) => {
@@ -779,24 +972,27 @@ export default class extends Controller {
   }
 
   resizeSelected(dw, dh) {
-    this.cy.$("node:selected").forEach(n => {
-      const w = Math.max(60,  (n.data("width")  ?? 130) + dw);
-      const h = Math.max(24,  (n.data("height") ?? 44)  + dh);
-      n.data({ width: w, height: h });
-      this.updateNode(n.data("dbId"), { width: w, height: h });
-    });
+    this.changeSelectedNodes("resize", n => ({
+      width:  Math.max(60, (n.data("width")  ?? 130) + dw),
+      height: Math.max(24, (n.data("height") ?? 44)  + dh)
+    }));
   }
 
   fontSizeSelected(delta) {
-    this.cy.$("node:selected").forEach(n => {
-      const fs = Math.max(8, (n.data("fontSize") ?? 13) + delta);
-      n.data("fontSize", fs);
-      this.updateNode(n.data("dbId"), { font_size: fs });
-    });
+    this.changeSelectedNodes("change font size of", n => ({ font_size: Math.max(8, (n.data("fontSize") ?? 13) + delta) }));
   }
 
-  async updateNode(dbId, attrs) {
-    await this.apiRequest(`${this.nodesUrlValue}/${dbId}`, "PATCH", { node: attrs });
+  changeSelectedNodes(verb, attributesFor) {
+    const nodes = this.cy.$("node:selected");
+    if (nodes.length === 0) return;
+    const current = n => ({ width: n.data("width"), height: n.data("height"), font_size: n.data("fontSize") });
+    const changes = nodes.map(n => {
+      const after = attributesFor(n);
+      const before = Object.fromEntries(Object.keys(after).map(key => [key, current(n)[key]]));
+      return this.updateChange("", "node", n.data("dbId"), before, after);
+    });
+    const label = nodes.length === 1 ? `${verb} “${nodes[0].data("label")}”` : `${verb} ${nodes.length} nodes`;
+    this.commands.execute(this.combine(label, changes));
   }
 
   // ---- Link operations ----
@@ -817,41 +1013,20 @@ export default class extends Controller {
       return;
     }
     const l = await resp.json();
-    this.cy.add({
-      data: {
-        id:          `l${l.id}`,
-        source:      `n${l.source_node_id}`,
-        target:      `n${l.target_node_id}`,
-        polarity:    l.polarity,
-        dbId:        l.id,
-        cp1Distance: 0,
-        cp2Distance: 0
-      }
-    });
-  }
-
-  async updateLink(dbId, attrs) {
-    const resp = await this.apiRequest(`${this.linksUrlValue}/${dbId}`, "PATCH", { link: attrs });
-    if (!resp.ok) console.warn("updateLink failed:", resp.status);
+    const edge = this.cy.add(this.linkElement(l));
+    this.commands.record(this.change(`link ${edge.source().data("label")} → ${edge.target().data("label")}`,
+                                     [this.restoreOp("link", l)], [this.deleteOp("link", l.id)]));
   }
 
   // ---- Delete ----
 
   deleteSelected() {
-    this.cy.$("node:selected").forEach(n => this.deleteNode(n.data("dbId"), n));
-    this.cy.$("edge:selected").forEach(e => this.deleteLink(e.data("dbId"), e));
-  }
-
-  async deleteNode(dbId, cyNode) {
-    const resp = await this.apiRequest(`${this.nodesUrlValue}/${dbId}`, "DELETE");
-    if (resp.ok) { this.removeBendHandles(); cyNode.remove(); }
-    else console.warn("deleteNode failed:", resp.status);
-  }
-
-  async deleteLink(dbId, cyEdge) {
-    const resp = await this.apiRequest(`${this.linksUrlValue}/${dbId}`, "DELETE");
-    if (resp.ok) { this.removeBendHandles(); cyEdge.remove(); }
-    else console.warn("deleteLink failed:", resp.status);
+    const nodes = this.cy.$("node:selected");
+    const edges = this.cy.$("edge:selected");
+    if (nodes.length + edges.length === 0) return;
+    const label = nodes.length === 1 && edges.length === 0 ? `delete “${nodes[0].data("label")}”`
+      : nodes.length === 0 && edges.length === 1 ? "delete link" : "delete selection";
+    this.commands.execute(this.deleteChange(label, nodes, edges));
   }
 
   // ---- View controls ----
@@ -1182,7 +1357,7 @@ export default class extends Controller {
         this.chatHistory = data.history || [];
         this.saveChat();
         this.appendChatMessage("assistant", data.reply || "(no reply)");
-        if (data.actions?.length) this.applyActions(data.actions);
+        if (data.actions?.length) this.applyActions(data.actions, text);
       } else {
         const body = await resp.json().catch(() => ({}));
         this.appendChatMessage("error", body.error || `Server error ${resp.status}`);
@@ -1237,59 +1412,54 @@ export default class extends Controller {
     return div;
   }
 
-  applyActions(actions) {
+  // The server has already made these changes; this shows them, and records
+  // the whole reply as one step that can be undone. The inverse of each
+  // action is taken from the canvas before the action is applied. Deleting
+  // the old diagram is asked about, and done, as a step of its own.
+  applyActions(actions, request = "") {
     let clearIds = null;
+    const forward = [];
+    const backward = [];
+    const step = (operation, inverse) => { forward.push(operation); backward.unshift(inverse); this.applyToCanvas(operation); };
+
     for (const action of actions) {
+      const node = this.cy.getElementById(`n${action.id}`);
+      const edge = this.cy.getElementById(`l${action.id}`);
       switch (action.type) {
         case "confirm_clear":
           clearIds = action.node_ids;
           break;
-
         case "add_node":
-          if (!this.cy.$(`#n${action.id}`).length) {
-            this.cy.add({
-              data: {
-                id: `n${action.id}`, label: action.title, dbId: action.id,
-                width: action.width ?? 130, height: action.height ?? 44,
-                fontSize: action.font_size ?? 13
-              },
-              position: { x: action.position_x, y: action.position_y }
-            });
+          if (!node.length) step(this.restoreOp("node", action), this.deleteOp("node", action.id));
+          break;
+        case "update_node":
+          if (node.length && action.title) {
+            step(this.updateOp("node", action.id, { title: action.title }),
+                 this.updateOp("node", action.id, { title: node.data("label") }));
           }
           break;
-
-        case "update_node": {
-          const n = this.cy.$(`#n${action.id}`);
-          if (n.length && action.title) n.data("label", action.title);
-          break;
-        }
-
         case "remove_node":
-          this.cy.$(`#n${action.id}`).remove();
+          if (node.length) step(this.deleteOp("node", action.id), this.restoreOp("node", this.nodeSnapshot(node)));
           break;
-
         case "add_link":
-          if (!this.cy.$(`#l${action.id}`).length) {
-            this.cy.add({
-              data: {
-                id: `l${action.id}`, source: `n${action.source_node_id}`,
-                target: `n${action.target_node_id}`, polarity: action.polarity,
-                dbId: action.id, cp1Distance: 0, cp2Distance: 0
-              }
-            });
+          if (!edge.length) step(this.restoreOp("link", action), this.deleteOp("link", action.id));
+          break;
+        case "update_link":
+          if (edge.length && action.polarity) {
+            step(this.updateOp("link", action.id, { polarity: action.polarity }),
+                 this.updateOp("link", action.id, { polarity: edge.data("polarity") }));
           }
           break;
-
-        case "update_link": {
-          const e = this.cy.$(`#l${action.id}`);
-          if (e.length && action.polarity) e.data("polarity", action.polarity);
-          break;
-        }
-
         case "remove_link":
-          this.cy.$(`#l${action.id}`).remove();
+          if (edge.length) step(this.deleteOp("link", action.id), this.restoreOp("link", this.linkSnapshot(edge)));
           break;
       }
+    }
+
+    if (forward.length) {
+      const words = request.split(/\s+/).filter(Boolean);
+      const summary = words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");
+      this.commands.record(this.change(`AI: “${summary}”`, forward, backward));
     }
     if (clearIds) this.confirmClear(clearIds);
   }

@@ -23,29 +23,19 @@ module Decidim::CausalLoop
       send(method, path, params: params.to_json, headers: { "CONTENT_TYPE" => "application/json" })
     end
 
-    def destroy_many(ids) = json_request(:delete, "#{nodes_path}/destroy_many", node_ids: ids)
-
     context "when the user is an editor" do
       before do
         Editor.create!(decidim_component_id: component.id, decidim_user_id: user.id)
         login_as user, scope: :user
       end
 
-      it "deletes a node and its links, and says which, so they can be restored" do
+      it "deletes a node and its links, and says which" do
         json_request(:delete, "#{nodes_path}/#{fishing.id}")
 
         expect(response.parsed_body).to eq("deleted" => { "nodes" => [fishing.id], "links" => [fishing_mining.id] })
         expect(Node.pluck(:title)).to contain_exactly("Mining", "Elsewhere")
         expect(Link.count).to eq(0)
         expect(Node.with_deleted.find(fishing.id)).to be_deleted
-      end
-
-      it "deletes the given nodes and their links, but only in this component" do
-        destroy_many([fishing.id, mining.id, elsewhere.id])
-
-        expect(response.parsed_body).to eq("deleted" => { "nodes" => [fishing.id, mining.id], "links" => [fishing_mining.id] })
-        expect(Node.pluck(:title)).to contain_exactly("Elsewhere")
-        expect(Link.count).to eq(0)
       end
 
       it "cannot update a deleted node" do
@@ -60,7 +50,7 @@ module Decidim::CausalLoop
       before { login_as user, scope: :user }
 
       it "is forbidden" do
-        destroy_many([fishing.id])
+        json_request(:delete, "#{nodes_path}/#{fishing.id}")
 
         expect(response).to have_http_status(:forbidden)
         expect(Node.count).to eq(3)

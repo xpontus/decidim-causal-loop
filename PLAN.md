@@ -28,6 +28,7 @@ Browser
 Rails engine  Decidim::CausalLoop::Engine
     NodesController    POST/PATCH/DELETE  nodes
     LinksController    POST/PATCH/DELETE  links
+    OperationsController POST /operations  batches of update/delete/restore (undo/redo)
     DiagramsController GET  the editor page
     ConversationsController POST /agent
       │
@@ -37,8 +38,8 @@ Rails engine  Decidim::CausalLoop::Engine
            both run the same tool loop over the same tool set
       ▼
 PostgreSQL
-    decidim_causal_loop_nodes    (title, description, position, size, font)
-    decidim_causal_loop_links    (source, target, polarity, label, control points)
+    decidim_causal_loop_nodes    (title, description, position, size, font, deleted_at)
+    decidim_causal_loop_links    (source, target, polarity, label, control points, deleted_at)
     decidim_causal_loop_editors  (component ↔ user grants)
 ```
 
@@ -174,7 +175,7 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 
 In this order. Each step adds specs for what it changes.
 
-1. **Quick wins**
+1. **Quick wins** ✅
    - **Long titles.** Split long titles at word or CamelCase boundaries
      ("LongestNameEver" → "Longest\nNameEver"), and grow the node box to fit
      the text instead of overflowing it.
@@ -185,12 +186,12 @@ In this order. Each step adds specs for what it changes.
    - **Clear chat** button in the AI panel header.
    - **Keep the AI conversation across reloads,** in browser storage (per
      browser, per diagram). Server-side storage is listed under "Later".
-2. **Editor specs.** System specs (Capybara with headless Chrome, already
+2. **Editor specs.** ✅ System specs (Capybara with headless Chrome, already
    provided by decidim-dev and set up in CI) for the editor's JavaScript:
    add, rename, move and delete nodes; links and polarity; auto-layout; the
    AI panel with a stubbed agent; the clear-diagram dialog. A safety net
    before the undo/redo refactor.
-3. **Loops.**
+3. **Loops.** ✅
    - **`find_loops` tool for the AI assistant.** Asked to "list all the
      loops", gpt-oss:20b reasoned for 80 s with no tool, and models are
      unreliable at finding cycles anyway. Find every cycle on the server (a
@@ -200,7 +201,7 @@ In this order. Each step adds specs for what it changes.
    - **Loops in the editor.** A panel listing the loops with R/B labels;
      selecting one highlights its nodes and links on the canvas. Reuses the
      same cycle detection.
-4. **Undo/redo.** See the plan below.
+4. **Undo/redo.** ✅ See "Undo/redo" below.
 5. **Save to file and load from file.** A full-fidelity file (titles,
    positions, sizes, fonts, polarity, bends), unlike today's exports, and an
    import that replaces the diagram or adds to it. After undo/redo so that a
@@ -226,143 +227,50 @@ integration (search, activity feed, linking from proposals).
 
 ---
 
-## Plan: undo/redo with the command pattern
+## Undo/redo
 
-### Goal
+Built as planned, with the command pattern, but simpler in two ways.
 
-Undo and redo every change an editor makes to the diagram, including a
-whole AI assistant reply as a single step. Toolbar buttons plus
-<kbd>Ctrl/Cmd+Z</kbd> and <kbd>Ctrl/Cmd+Shift+Z</kbd> (and <kbd>Ctrl+Y</kbd>).
-The history covers the current page session in this browser; it is not
-shared between editors and is lost on reload.
+**Soft delete.** Nodes and links have `deleted_at`. Deleting only marks a
+record, so it keeps its ID and every older step in the history still refers
+to the right record. A default scope hides marked rows from every read,
+including the AI assistant's. `DeletedRecords.purge!` (rake
+`decidim_causal_loop:purge_deleted`) removes rows deleted over 30 days ago.
 
-### Where changes happen today
+**Commands are operation lists.** Instead of one class per kind of edit,
+every edit is a list of operations and its inverse:
+`{op: "update", type, id, attrs}`, `{op: "delete", type, id}` and
+`{op: "restore", type, id, snapshot}` (the snapshot redraws the element;
+the server ignores it). The inverse of a delete is a restore, and redoing a
+creation is a restore too, so nothing is ever re-created. A step made of
+several changes (`combine`) concatenates the lists and reverses the
+inverses; that is the Macro. Each list is sent to `POST operations` and
+applied in one transaction, so an undo happens completely or not at all.
 
-Every mutation is an ad-hoc `apiRequest` inside an event handler, and the
-canvas is updated separately. These are the call sites the refactor must
-cover:
+**CommandManager** (`command_manager.js`) keeps the undo and redo stacks
+(100 entries) and runs everything through one promise queue. `execute`
+runs a command; `record` remembers one that has already happened (a node
+the server created, an AI reply). A command whose undo or redo fails is
+dropped with a toast, and the rest of the history is kept.
 
-| User action | Code today | Command |
-|---|---|---|
-| Add node (button, double-click) | `addNodeAt` | `AddNode` |
-| Rename (inline edit) | `startInlineEdit` → `save` | `RenameNode` |
-| Drag one or several nodes | `dragfree` handler | `MoveNodes` |
-| Width/height, font size | `resizeSelected`, `fontSizeSelected` | `ResizeNodes`, `SetFontSize` |
-| Add link (C key, button) | `createLink` | `AddLink` |
-| Toggle polarity | edge `tap` handler | `SetPolarity` |
-| Bend a link | bend handle `onUp` | `BendLink` |
-| Delete selected | `deleteSelected` | `DeleteElements` |
-| Auto-layout | `autoLayout` | `MoveNodes` + `BendLink`s, as one `Macro` |
-| AI assistant reply | `applyActions` | `Macro` of the reply's actions |
-| Confirmed clear | `confirmClear` | `DeleteElements` |
+| Edit | How it is recorded |
+|---|---|
+| Add node, then name it | `record`; naming it amends the same step |
+| Rename, resize, font size | `execute` of attribute updates |
+| Drag, one or several nodes | `execute`, one step per drag (grab/free) |
+| Add link | `record` |
+| Flip polarity | `execute`; the toast's Undo is the same undo |
+| Bend a link | `execute` on release |
+| Delete selection | `execute`; links are deleted explicitly before nodes |
+| Auto-layout | `execute` with a first `run` that only saves, since the nodes are already animating |
+| AI reply | `record`; inverses are taken from the canvas before each action, so the server sends no previous values |
+| Confirmed clear | `execute` of a delete, a step of its own |
 
-### Design
-
-**Command interface.** Each command is an object with `label` (shown in
-the button tooltip: "Undo move 3 nodes"), and async `do()` and `undo()`. Both
-call the server *and* update Cytoscape, so a command is the only place that
-knows how to apply and reverse its change. Commands carry plain data (titles,
-positions, polarity), never Cytoscape element references, which do not
-survive a delete and re-create.
-
-**CommandManager.** Owns an undo stack and a redo stack (capped at about
-100 entries).
-- `execute(cmd)` runs `do()`, pushes the command onto the undo stack and
-  clears the redo stack.
-- `record(cmd)` pushes a command whose effect has already happened. Drags
-  and AI replies are applied before we know to record them, so they use this
-  instead of `execute`.
-- `undo()` / `redo()` move commands between the stacks.
-
-All calls go through one promise queue, so a fast double <kbd>Ctrl+Z</kbd>
-cannot interleave two requests. The buttons are disabled while the queue is
-busy, and while the stacks are empty.
-
-**Macro.** A composite holding a list of commands. `do()` runs them in
-order and `undo()` runs their undos in reverse. Used for auto-layout, an AI
-reply, and a multi-selection delete.
-
-### The hard part: IDs after undoing a delete
-
-Undoing a delete must bring the node back. If that means creating a new
-record, it gets a new ID, and every older command in the history that names
-the old ID (a rename, a link to it) breaks.
-
-**Recommended: soft delete on the server.**
-- Add `deleted_at` to nodes and links.
-- `destroy` sets it instead of deleting the row; deleting a node also
-  soft-deletes its links in the same transaction.
-- A `restore` endpoint clears it.
-- All reads (`index`, `list_graph`, the agent's queries) scope to
-  `deleted_at: nil`.
-
-IDs never change, so every command can keep using database IDs and undo of a
-delete is simply restore. A periodic purge (rake task) removes rows deleted
-more than, say, 30 days ago. This also lays the groundwork for a future
-history view.
-
-*Alternative, rejected:* keep client-side keys and an ID map that is
-rewritten whenever a record is re-created. It works without a migration,
-but every command has to go through the map, and the map also has to be
-rewritten for links that were re-created because a node was. That's easy
-to get subtly wrong.
-
-### Batch endpoint
-
-An AI reply or an auto-layout can touch 30+ records. Add
-`POST /operations`, which takes an ordered list of
-`{op: create|update|delete|restore, type: node|link, id, attrs}`, runs it
-in one transaction and returns the new IDs. Macros send one request, so an
-undo applies completely or not at all. Single commands may keep using the
-existing REST endpoints.
-
-### AI replies
-
-The agent already returns `actions`. For undo the browser needs the
-previous state:
-- `update_node` and `update_link` actions gain the old values (`previous`).
-- With soft delete, `remove_*` needs only the ID.
-
-`applyActions` then records one `Macro` labelled "AI: <first words of the
-request>". Undoing it reverses the whole reply.
-
-Once this exists, `clear_diagram` can delete immediately (soft) and the
-confirmation dialog can go: undo becomes the safety net, which interrupts
-less. Decide when we get there.
-
-### Concurrency
-
-The editor has no real-time sync, so another editor may have changed or
-deleted something since. An undo whose request fails (404, or a node that
-was hard-purged) shows "Could not undo: the diagram has changed", drops that
-entry, and leaves the rest of the history alone. Optimistic locking
-(`lock_version`) is a possible later addition. Not needed for the first
-version.
-
-### UI
-
-- **Buttons:** Undo and Redo in the edit toolbar, with the command label as
-  tooltip.
-- **Shortcuts:** added to the existing `keydown` handler. Ignored while
-  typing in an input or textarea, so the browser's own text undo still works
-  there.
-
-### Phases
-
-1. **Soft delete.** Migration, model scopes, `restore` endpoints, specs.
-   Read paths must exclude deleted rows. Request specs.
-2. **CommandManager and commands for direct edits.** Route every call site
-   in the table except AI and auto-layout through commands. Add the buttons
-   and shortcuts.
-3. **Batch endpoint and Macro.** Auto-layout and multi-delete as macros.
-4. **AI replies as undoable macros.** Add `previous` to the agent's update
-   actions. Revisit the clear-diagram dialog.
-
-**Tests.** There is no JavaScript test runner yet. Either add system specs
-(Capybara with headless Chrome, which decidim-dev already sets up) covering
-undo and redo of add, move, delete and an AI reply with a stubbed agent; or
-add a small JS unit-test runner for CommandManager. System specs are
-recommended, since they also cover the server side.
+**Not done, possibly later:** the clear-diagram dialog stays (it now says
+the deletion can be undone). Undo history does not survive a reload, and
+there is no optimistic locking: an undo over someone else's later change to
+the same record silently overwrites it, while an undo of a record that is
+gone fails with a message.
 
 ---
 
