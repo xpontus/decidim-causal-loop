@@ -18,6 +18,9 @@ Space.
   (nodes). Draw directed links between them and mark each as positive (+) or
   negative (−). Resize nodes, change their font size, and bend links so they
   don't overlap.
+- **Loops.** The Loops button lists every feedback loop, labelled
+  reinforcing (R, an even number of negative links) or balancing (B, an odd
+  number). Selecting one highlights it on the canvas. Viewers can use it too.
 - **Automatic layout.** The Auto-layout button rearranges the diagram with a
   force-directed (spring) layout and saves the result. Press it again for a
   different arrangement.
@@ -40,9 +43,8 @@ Space.
 
 **Analysis**
 
-- It does not find loops or label them as reinforcing (R) or balancing (B).
-  Spotting the loops and counting the negative links is left to the people
-  using the diagram.
+- It finds loops and labels them, but does not judge them: which loops
+  dominate, and when, is left to the people using the diagram.
 - Links can only be positive or negative. There is no way to mark delays,
   link strength, or uncertain polarity.
 - It does not simulate the system or compute any values. It is a drawing

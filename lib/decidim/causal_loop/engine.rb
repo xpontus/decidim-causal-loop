@@ -15,6 +15,7 @@ module Decidim
         end
         resources :links,         only: [:create, :update, :destroy]
         post "agent", to: "conversations#create", as: :agent
+        get "loops", to: "diagrams#loops", as: :loops
         root to: "diagrams#index"
       end
 

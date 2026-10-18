@@ -8,6 +8,7 @@ export default class extends Controller {
     nodesUrl: String,
     linksUrl: String,
     conversationsUrl: String,
+    loopsUrl: String,
     editable: Boolean,
     csrfToken: String
   }
@@ -108,6 +109,9 @@ export default class extends Controller {
         }
       },
       { selector: "edge:selected", style: { "width": 4 } },
+      { selector: ".cl-dim", style: { "opacity": 0.2 } },
+      { selector: "node.cl-in-loop", style: { "border-width": 3, "border-color": "#f0a500" } },
+      { selector: "edge.cl-in-loop", style: { "width": 4 } },
       {
         selector: "edge.cl-flash",
         style: { "width": 5, "underlay-color": "#f0a500", "underlay-opacity": 0.6, "underlay-padding": 6 }
@@ -870,10 +874,118 @@ export default class extends Controller {
     this.element.querySelector("#btn-fit")?.addEventListener("click", () => {
       this.cy.fit(this.cy.elements(), 40);
     });
+    this.setupLoops();
     this.element.querySelector("#btn-export-json")   ?.addEventListener("click", () => this.exportJson());
     this.element.querySelector("#btn-export-graphml") ?.addEventListener("click", () => this.exportGraphml());
     this.element.querySelector("#btn-save-png")      ?.addEventListener("click", () => this.savePng());
     this.element.querySelector("#btn-print-pdf")     ?.addEventListener("click", () => this.printPdf());
+  }
+
+  // ---- Loops ----
+
+  // The loops panel lists the diagram's feedback loops, found by the server
+  // (the same code the AI assistant's find_loops tool uses). Selecting one
+  // highlights it and dims everything else. While the panel is open it
+  // refreshes shortly after the diagram changes.
+  setupLoops() {
+    this.element.querySelector("#btn-loops")?.addEventListener("click", () => {
+      if (this.loopsPanel) this.closeLoops();
+      else this.openLoops();
+    });
+    this.cy.on("add remove data", () => {
+      if (!this.loopsPanel) return;
+      clearTimeout(this.loopsRefreshTimer);
+      this.loopsRefreshTimer = setTimeout(() => this.refreshLoops(), 800);
+    });
+    this.onLoopsKeyDown = (e) => { if (e.key === "Escape") this.highlightLoop(null); };
+    document.addEventListener("keydown", this.onLoopsKeyDown);
+  }
+
+  openLoops() {
+    const panel = document.createElement("div");
+    panel.className = "cl-loops";
+    panel.innerHTML = `<div class="cl-loops-header"><span>Loops</span>
+      <button type="button" aria-label="Close loops">&#x2715;</button></div>
+      <div class="cl-loops-note">Finding loops…</div>`;
+    panel.querySelector("button").addEventListener("click", () => this.closeLoops());
+    this.cyContainer.appendChild(panel);
+    this.loopsPanel = panel;
+    this.refreshLoops();
+  }
+
+  closeLoops() {
+    clearTimeout(this.loopsRefreshTimer);
+    this.highlightLoop(null);
+    this.loopsPanel?.remove();
+    this.loopsPanel = null;
+  }
+
+  async refreshLoops() {
+    let data;
+    try {
+      const resp = await fetch(this.loopsUrlValue, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+      if (!resp.ok) throw new Error(`error ${resp.status}`);
+      data = await resp.json();
+    } catch (err) {
+      this.renderLoops(null, `Could not find the loops (${err.message}).`);
+      return;
+    }
+    this.renderLoops(data);
+  }
+
+  renderLoops(data, error = null) {
+    if (!this.loopsPanel) return;
+    this.highlightLoop(null);
+    this.loopsPanel.querySelectorAll("ul, .cl-loops-note").forEach(el => el.remove());
+    const title = this.loopsPanel.querySelector(".cl-loops-header span");
+
+    const note = (text) => {
+      const p = document.createElement("div");
+      p.className = "cl-loops-note";
+      p.textContent = text;
+      this.loopsPanel.appendChild(p);
+    };
+    if (error) { note(error); return; }
+
+    title.textContent = `Loops: ${data.reinforcing} reinforcing, ${data.balancing} balancing`;
+    if (data.loops.length === 0) { note("This diagram has no feedback loops yet."); return; }
+
+    const list = document.createElement("ul");
+    data.loops.forEach(loop => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("aria-pressed", "false");
+      button.title = loop.type === "R" ? "Reinforcing: an even number of negative links"
+                                       : "Balancing: an odd number of negative links";
+      const badge = document.createElement("span");
+      badge.className = `cl-loop-badge cl-loop-badge--${loop.type}`;
+      badge.textContent = loop.name;
+      const text = document.createElement("span");
+      text.textContent = [...loop.nodes, loop.nodes[0]].join(" → ");
+      button.append(badge, text);
+      button.addEventListener("click", () => {
+        this.highlightLoop(this.highlightedLoop === loop ? null : loop);
+        list.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === button && this.highlightedLoop === loop)));
+      });
+      item.appendChild(button);
+      list.appendChild(item);
+    });
+    this.loopsPanel.appendChild(list);
+    if (data.truncated) note(`Showing the first ${data.loops.length} loops; the diagram has more.`);
+  }
+
+  highlightLoop(loop) {
+    this.highlightedLoop = loop;
+    this.cy.elements().removeClass("cl-dim cl-in-loop");
+    this.loopsPanel?.querySelectorAll("button[aria-pressed]").forEach(b => b.setAttribute("aria-pressed", "false"));
+    if (!loop) return;
+
+    const members = this.cy.collection();
+    loop.node_ids.forEach(id => { members.merge(this.cy.$(`#n${id}`)); });
+    loop.link_ids.forEach(id => { members.merge(this.cy.$(`#l${id}`)); });
+    this.cy.elements().not(members).addClass("cl-dim");
+    members.addClass("cl-in-loop");
   }
 
   // The editor covers the window, hiding Decidim's header and footer.
@@ -1205,6 +1317,8 @@ export default class extends Controller {
     this.removeBendHandles();
     this.chatResizeObserver?.disconnect();
     this.hideToast();
+    clearTimeout(this.loopsRefreshTimer);
+    document.removeEventListener("keydown", this.onLoopsKeyDown);
     document.documentElement.classList.remove("cl-full-view");
     this.cy?.destroy();
   }

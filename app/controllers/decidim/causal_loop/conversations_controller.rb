@@ -80,6 +80,9 @@ module Decidim
             }
           }.to_json
 
+        when "find_loops"
+          LoopFinder.report(@nodes, @links).to_json
+
         when "create_node"
           title = input["title"].to_s.strip
           return "Error: title is required" if title.blank?
@@ -324,10 +327,16 @@ module Decidim
             looking up their IDs. The current diagram above already lists every ID.
           - When the user approves a diagram you proposed, build all of it: every node and
             every link, not a part of it.
+          - For any question about loops (which loops exist, reinforcing or balancing, how
+            many), call find_loops and explain its result. Never work out loops yourself:
+            find_loops is exact, and it returns each loop's name (R1, B1, ...), its nodes in
+            order and its number of negative links.
           - When the user asks for a new or fresh diagram and the current diagram is not
             empty, call clear_diagram first. The user is asked to confirm the deletion.
           - Keep node titles short (1–4 words), starting with a capital letter.
           - After changes, briefly explain what you did and the systems logic behind it.
+          - The chat shows plain text and does not render Markdown: no tables, headings or
+            bold. Use short paragraphs, and lists with "-" at the start of a line.
           - Answer questions without tools — only call tools when actually modifying the diagram.
           - If a user describes a system (e.g. "staff burnout"), suggest a starter diagram and build it.
         PROMPT
@@ -338,6 +347,13 @@ module Decidim
           {
             name: "list_graph",
             description: "Returns all current nodes and links with their IDs. Call this before referencing IDs in other tools.",
+            input_schema: { type: "object", properties: {}, required: [] }
+          },
+          {
+            name: "find_loops",
+            description: "Finds every feedback loop in the diagram and labels it reinforcing (R, even " \
+                         "number of negative links) or balancing (B, odd number). Use this for any question " \
+                         "about loops instead of working them out yourself.",
             input_schema: { type: "object", properties: {}, required: [] }
           },
           {

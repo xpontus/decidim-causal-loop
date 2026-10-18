@@ -58,6 +58,18 @@
   .cl-toast button { margin:0; padding:0.15rem 0.6rem; border:1px solid #fff; border-radius:4px; background:transparent; color:#fff; font-weight:600; cursor:pointer; }
   .cl-toast button:hover { background:rgba(255,255,255,0.15); }
 
+  .cl-loops { position:absolute; top:8px; left:8px; z-index:25; width:min(340px, 90%); max-height:70%; display:flex; flex-direction:column; background:#fff; border:1px solid #ddd; border-radius:6px; box-shadow:0 2px 10px rgba(0,0,0,0.15); font-size:0.85rem; }
+  .cl-loops-header { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; border-bottom:1px solid #eee; font-weight:600; }
+  .cl-loops-header button { margin:0 0 0 auto; padding:0 0.3rem; border:0; background:none; font-size:1rem; cursor:pointer; }
+  .cl-loops ul { list-style:none; margin:0; padding:0.25rem; overflow-y:auto; }
+  .cl-loops li button { display:flex; gap:0.5rem; width:100%; margin:0; padding:0.35rem 0.4rem; border:0; border-radius:4px; background:none; text-align:left; cursor:pointer; color:inherit; }
+  .cl-loops li button:hover { background:#f3f6fa; }
+  .cl-loops li button[aria-pressed="true"] { background:#fdf3d8; }
+  .cl-loop-badge { flex:none; min-width:2.2rem; padding:0 0.3rem; border-radius:3px; color:#fff; font-weight:700; text-align:center; }
+  .cl-loop-badge--R { background:#2c5f8a; }
+  .cl-loop-badge--B { background:#c77d12; }
+  .cl-loops-note { padding:0.5rem 0.6rem; color:#666; }
+
   #cl-confirm { max-width:28rem; padding:1.25rem; border:1px solid #ccc; border-radius:6px; box-shadow:0 8px 30px rgba(0,0,0,0.2); }
   #cl-confirm::backdrop { background:rgba(0,0,0,0.35); }
   #cl-confirm h3 { margin:0 0 0.5rem; font-size:1.1rem; }
@@ -77,6 +89,7 @@
       data-causal-loop-editor-nodes-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).nodes_path %>"
       data-causal-loop-editor-links-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).links_path %>"
       data-causal-loop-editor-conversations-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).agent_path %>"
+      data-causal-loop-editor-loops-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).loops_path %>"
       data-causal-loop-editor-editable-value="<%= @editable %>"
       data-causal-loop-editor-csrf-token-value="<%= form_authenticity_token %>"
     >
@@ -109,6 +122,7 @@
           <button type="button" id="btn-fit"      class="button hollow small" title="Fit all">Fit</button>
           <button type="button" id="btn-zoom-in"  class="button hollow small" title="Zoom in"  style="min-width:2rem;">+</button>
         </div>
+        <button type="button" id="btn-loops" class="button hollow small" title="List the feedback loops and highlight them">&#x27F3; Loops</button>
         <div style="display:flex; gap:0.25rem; margin-left:0.5rem;">
           <button type="button" id="btn-export-json"    class="button hollow small">Export JSON</button>
           <button type="button" id="btn-export-graphml" class="button hollow small">Export GraphML</button>

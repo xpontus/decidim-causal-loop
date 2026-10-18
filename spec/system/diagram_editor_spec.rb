@@ -164,6 +164,29 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
       end
     end
 
+    it "lists the loops and highlights the one selected" do
+      tourists = node("Tourists", 100, 100)
+      income = node("Island Income", 300, 100)
+      crowding = node("Crowding", 100, 300)
+      link(tourists, income)
+      link(income, tourists)
+      link(tourists, crowding)
+      link(crowding, tourists, "negative")
+      open_editor
+      click_on "Loops"
+
+      within(".cl-loops") do
+        expect(page).to have_content("Loops: 1 reinforcing, 1 balancing")
+        expect(page).to have_content("Tourists → Island Income → Tourists")
+        click_on "B1"
+      end
+
+      expect(editor_script("return c.cy.$('.cl-in-loop').map(e => e.id()).sort();"))
+        .to match_array(["n#{tourists.id}", "n#{crowding.id}"] + links.where(source_node_id: [tourists.id, crowding.id],
+                                                                             target_node_id: [tourists.id, crowding.id]).map { |l| "l#{l.id}" })
+      expect(editor_script("return c.cy.$('#n#{income.id}').hasClass('cl-dim');")).to be(true)
+    end
+
     it "wraps long titles onto several lines" do
       node("GovernmentRegulation", 200, 200)
       open_editor
