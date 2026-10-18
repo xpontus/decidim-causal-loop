@@ -175,6 +175,16 @@ Things that cost real time, recorded so they do not have to be rediscovered.
 - **Deploy to the Rurbanive CoP Decidim.** Add the causal loop editor to the
   Rurbanive community-of-practice Decidim instance.
 - **Undo/redo.** See the plan below.
+- **`find_loops` tool for the AI assistant.** Asked to "list all the loops",
+  gpt-oss:20b reasoned for 80 s with no tool, and models are unreliable at
+  finding cycles anyway. Find every cycle on the server instead (a DFS is
+  fine at this size; Johnson's algorithm if diagrams grow), label each R or B
+  by counting negative links, and let the model only explain the result.
+  This also removes the README's "does not find loops" limitation.
+- **Stray clicks flip link signs.** A single click on a link toggles its
+  polarity, and it is easy to do by accident (it happened while taking
+  screenshots). Consider requiring a double-click, a modifier key, or a
+  small +/− control on the selected link.
 
 ---
 
