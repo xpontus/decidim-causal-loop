@@ -29,6 +29,8 @@ Rails engine  Decidim::CausalLoop::Engine
     NodesController    POST/PATCH/DELETE  nodes
     LinksController    POST/PATCH/DELETE  links
     OperationsController POST /operations  batches of update/delete/restore (undo/redo)
+    DiagramsController GET  /file      the diagram file (DiagramFile.dump)
+    ImportsController  POST /import    load a diagram file, replace or add
     DiagramsController GET  the editor page
     ConversationsController POST /agent
       │
@@ -202,7 +204,7 @@ In this order. Each step adds specs for what it changes.
      selecting one highlights its nodes and links on the canvas. Reuses the
      same cycle detection.
 4. **Undo/redo.** ✅ See "Undo/redo" below.
-5. **Save to file and load from file.** A full-fidelity file (titles,
+5. **Save to file and load from file.** ✅ A full-fidelity file (titles,
    positions, sizes, fonts, polarity, bends), unlike today's exports, and an
    import that replaces the diagram or adds to it. After undo/redo so that a
    load can be undone. Today's backups use `../backups/restore.rb`, outside

@@ -9,7 +9,7 @@ module Decidim
       def create
         @node = Node.new(node_params.merge(decidim_component_id: current_component.id))
         if @node.save
-          render json: node_json(@node), status: :created
+          render json: @node.editor_json, status: :created
         else
           render json: { errors: @node.errors.full_messages }, status: :unprocessable_entity
         end
@@ -18,7 +18,7 @@ module Decidim
       def update
         @node = Node.find_by!(decidim_component_id: current_component.id, id: params[:id])
         if @node.update(node_params)
-          render json: node_json(@node)
+          render json: @node.editor_json
         else
           render json: { errors: @node.errors.full_messages }, status: :unprocessable_entity
         end
@@ -41,12 +41,6 @@ module Decidim
       def node_params
         params.require(:node).permit(:title, :description, :position_x, :position_y,
                                      :width, :height, :font_size)
-      end
-
-      def node_json(node)
-        { id: node.id, title: node.title, description: node.description,
-          position_x: node.position_x, position_y: node.position_y,
-          width: node.width, height: node.height, font_size: node.font_size }
       end
     end
   end

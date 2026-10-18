@@ -13,6 +13,8 @@ module Decidim
         resources :nodes,         only: [:create, :update, :destroy]
         resources :links,         only: [:create, :update, :destroy]
         post "operations", to: "operations#create", as: :operations
+        get "file", to: "diagrams#file", as: :file
+        post "import", to: "imports#create", as: :import
         post "agent", to: "conversations#create", as: :agent
         get "loops", to: "diagrams#loops", as: :loops
         root to: "diagrams#index"

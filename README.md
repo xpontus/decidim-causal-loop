@@ -36,8 +36,12 @@ Space.
   participatory space, and users granted access under the component's
   **Editors** screen can edit. Everyone else who can see the component can
   view, zoom and export it.
-- **Export.** Download the diagram as JSON or GraphML, save it as a PNG, or
-  print it / save it as a PDF.
+- **Save and load files.** **Save file** downloads the whole diagram,
+  layout included, as a JSON file. Editors can **Load file…** to replace the
+  diagram with a saved one or add it beside the current one; either can be
+  undone. Files from the earlier "Export JSON" button load too.
+- **Export.** Download the diagram as GraphML, save it as a PNG, or print it
+  / save it as a PDF.
 - **Optional AI assistant.** Editors can ask an AI to add, rename and delete
   variables and links, change polarity, or explain how the diagram works (see
   [AI assistant](#ai-assistant)).
@@ -76,10 +80,9 @@ Space.
 - New links always start as positive. Clicking a link switches its polarity,
   so a stray click can flip a sign; the link flashes and a message offers to
   undo it for a few seconds.
-- Diagrams cannot be imported. The JSON and GraphML exports leave out
-  layout details: GraphML has no positions, and neither format includes node
-  sizes, fonts or link curves. Use them for analysis in other tools, not as
-  backups.
+- GraphML exports have no layout (positions, sizes, fonts or link curves)
+  and cannot be loaded back. Use them for analysis in other tools; use
+  **Save file** for backups and copies.
 
 **Decidim integration**
 

@@ -11,6 +11,7 @@ export default class extends Controller {
     conversationsUrl: String,
     loopsUrl: String,
     operationsUrl: String,
+    importUrl: String,
     editable: Boolean,
     csrfToken: String
   }
@@ -341,6 +342,64 @@ export default class extends Controller {
     this.element.querySelector("#btn-font-smaller") ?.addEventListener("click", () => this.fontSizeSelected(-2));
 
     this.element.querySelector("#btn-layout")?.addEventListener("click", () => this.autoLayout());
+
+    const fileInput = this.element.querySelector("#cl-file-input");
+    this.element.querySelector("#btn-load-file")?.addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });
+    fileInput?.addEventListener("change", () => { if (fileInput.files[0]) this.loadFile(fileInput.files[0]); });
+  }
+
+  // ---- Loading a diagram file ----
+
+  // Loads a file from "Save file" (or the older "Export JSON"), replacing
+  // the diagram or adding it beside the current one. The server does the
+  // work in one transaction; the result is drawn and recorded as one step,
+  // so undo removes what was loaded and brings back what it replaced.
+  async loadFile(file) {
+    let diagram;
+    try {
+      diagram = JSON.parse(await file.text());
+    } catch {
+      this.showToast(`${file.name} is not a diagram file.`);
+      return;
+    }
+
+    let mode = "replace";
+    if (this.cy.nodes().length > 0) {
+      const count = Array.isArray(diagram?.nodes) ? diagram.nodes.length : 0;
+      const choice = await this.confirmDialog({
+        title: `Load “${file.name}”`,
+        message: `Replace the current diagram with the file's ${count} variables, or add them beside it? ` +
+                 "You can undo either.",
+        confirmLabel: "Replace",
+        altLabel: "Add beside",
+        cancelLabel: "Cancel"
+      });
+      if (!choice) return;
+      mode = choice === "alt" ? "add" : "replace";
+    }
+
+    this.updateStatus("Loading…");
+    const resp = await this.apiRequest(this.importUrlValue, "POST", { diagram, mode }).catch(() => null);
+    this.updateStatus("");
+    const body = await resp?.json().catch(() => ({})) ?? {};
+    if (!resp?.ok) {
+      this.showToast(`Could not load ${file.name}: ${(body.errors || []).join(", ") || "network error"}.`, { duration: 10000 });
+      return;
+    }
+
+    const removed = this.cy.collection(body.deleted_nodes.map(id => this.cy.getElementById(`n${id}`)));
+    const replaced = this.deleteChange("", removed);
+    const added = this.change("",
+      [...body.nodes.map(n => this.restoreOp("node", n)), ...body.links.map(l => this.restoreOp("link", l))],
+      [...body.links.map(l => this.deleteOp("link", l.id)), ...body.nodes.map(n => this.deleteOp("node", n.id))]);
+    const command = this.combine(`load “${file.name}”`, [replaced, added]);
+    this.removeBendHandles();
+    command.forward.forEach(operation => this.applyToCanvas(operation));
+    this.commands.record(command);
+    this.fitView();
+
+    const skipped = body.skipped.length ? ` ${body.skipped.length} links were skipped: they refer to missing variables.` : "";
+    this.showToast(`Loaded ${body.nodes.length} variables and ${body.links.length} links.${skipped}`);
   }
 
   // ---- Undo and redo ----
@@ -622,9 +681,10 @@ export default class extends Controller {
 
   // ---- Confirmation dialog ----
 
-  // Resolves to true if the user confirms. Uses a native <dialog>, so it is
-  // modal, closes on Escape (as a cancel) and keeps focus inside.
-  confirmDialog({ title, message, confirmLabel, cancelLabel }) {
+  // Resolves to true if the user confirms, false if not, and "alt" for the
+  // optional third choice. Uses a native <dialog>, so it is modal, closes on
+  // Escape (as a cancel) and keeps focus inside.
+  confirmDialog({ title, message, confirmLabel, cancelLabel, altLabel = null }) {
     const dialog = this.element.querySelector("#cl-confirm");
     if (!dialog?.showModal) return Promise.resolve(false);
 
@@ -632,22 +692,28 @@ export default class extends Controller {
     dialog.querySelector("#cl-confirm-message").textContent = message;
     const ok     = dialog.querySelector("#cl-confirm-ok");
     const cancel = dialog.querySelector("#cl-confirm-cancel");
+    const alt    = dialog.querySelector("#cl-confirm-alt");
     ok.textContent     = confirmLabel;
     cancel.textContent = cancelLabel;
+    alt.textContent    = altLabel ?? "";
+    alt.hidden         = !altLabel;
 
     return new Promise(resolve => {
       const finish = (result) => {
         ok.removeEventListener("click", onOk);
         cancel.removeEventListener("click", onCancel);
+        alt.removeEventListener("click", onAlt);
         dialog.removeEventListener("close", onClose);
         if (dialog.open) dialog.close();
         resolve(result);
       };
       const onOk     = () => finish(true);
       const onCancel = () => finish(false);
+      const onAlt    = () => finish("alt");
       const onClose  = () => finish(false);
       ok.addEventListener("click", onOk);
       cancel.addEventListener("click", onCancel);
+      alt.addEventListener("click", onAlt);
       dialog.addEventListener("close", onClose);
       dialog.showModal();
       cancel.focus();
@@ -1050,7 +1116,6 @@ export default class extends Controller {
       this.cy.fit(this.cy.elements(), 40);
     });
     this.setupLoops();
-    this.element.querySelector("#btn-export-json")   ?.addEventListener("click", () => this.exportJson());
     this.element.querySelector("#btn-export-graphml") ?.addEventListener("click", () => this.exportGraphml());
     this.element.querySelector("#btn-save-png")      ?.addEventListener("click", () => this.savePng());
     this.element.querySelector("#btn-print-pdf")     ?.addEventListener("click", () => this.printPdf());
@@ -1182,14 +1247,6 @@ export default class extends Controller {
   }
 
   // ---- Export ----
-
-  exportJson() {
-    const data = {
-      nodes: this.cy.nodes().map(n => ({ id: n.data("dbId"), title: n.data("label"), x: Math.round(n.position("x")), y: Math.round(n.position("y")) })),
-      links: this.cy.edges().map(e => ({ id: e.data("dbId"), source: e.data("source").slice(1), target: e.data("target").slice(1), polarity: e.data("polarity") }))
-    };
-    this.downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), "causal-loop-diagram.json");
-  }
 
   exportGraphml() {
     const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

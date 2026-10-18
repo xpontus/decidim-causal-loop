@@ -12,7 +12,7 @@ module Decidim
           render json: { errors: ["Nodes do not belong to this component"] }, status: :unprocessable_entity and return
         end
         if @link.save
-          render json: link_json(@link), status: :created
+          render json: @link.editor_json, status: :created
         else
           render json: { errors: @link.errors.full_messages }, status: :unprocessable_entity
         end
@@ -21,7 +21,7 @@ module Decidim
       def update
         @link = Link.find_by!(decidim_component_id: current_component.id, id: params[:id])
         if @link.update(link_params)
-          render json: link_json(@link)
+          render json: @link.editor_json
         else
           render json: { errors: @link.errors.full_messages }, status: :unprocessable_entity
         end
@@ -49,14 +49,6 @@ module Decidim
       def nodes_belong_to_component?(source_id, target_id)
         scope = Node.where(decidim_component_id: current_component.id)
         scope.exists?(id: source_id) && scope.exists?(id: target_id)
-      end
-
-      def link_json(link)
-        { id: link.id, source_node_id: link.source_node_id,
-          target_node_id: link.target_node_id, polarity: link.polarity,
-          label: link.label,
-          cp1_distance: link.cp1_distance.to_f,
-          cp2_distance: link.cp2_distance&.to_f }
       end
     end
   end

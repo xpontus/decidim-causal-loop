@@ -94,7 +94,8 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
       expect(page).to have_content("You do not have edit access to this diagram")
       expect(page).to have_no_button("+ Add node")
       expect(page).to have_no_button("AI Assistant")
-      expect(page).to have_button("Export JSON")
+      expect(page).to have_link("Save file")
+      expect(page).to have_no_button("Load file…")
     end
   end
 
@@ -295,6 +296,56 @@ describe "Diagram editor" do # rubocop:disable RSpec/DescribeClass -- a system s
         click_on "Undo"
         expect(page).to have_css(".cl-toast", text: "Could not undo delete “Tourists”")
         expect(page).to have_button("Undo", disabled: true)
+      end
+    end
+
+    describe "loading a file" do
+      let(:file) do
+        Tempfile.new(["island", ".json"]).tap do |f|
+          f.write({ format: "decidim-causal-loop", version: 1,
+                    nodes: [{ id: 1, title: "Tourists", position_x: 0, position_y: 0, width: 150 },
+                            { id: 2, title: "Crowding", position_x: 200, position_y: 0 }],
+                    links: [{ source: 1, target: 2, polarity: "negative", cp1_distance: 20 }] }.to_json)
+          f.close
+        end
+      end
+
+      def load_file = attach_file("cl-file-input", file.path, make_visible: true)
+
+      def canvas_labels = editor_script("return c.cy.nodes().map(n => n.data('label')).sort();")
+
+      it "loads into an empty diagram straight away" do
+        open_editor
+        load_file
+
+        expect(page).to have_css(".cl-toast", text: "Loaded 2 variables and 1 links")
+        expect(nodes.pluck(:title, :width)).to contain_exactly(["Tourists", 150], ["Crowding", 130])
+        expect(editor_script("const e = c.cy.edges()[0]; return [e.data('polarity'), e.data('cp1Distance')];")).to eq(["negative", 20])
+      end
+
+      it "replaces the diagram, and undo brings the old one back" do
+        old = node("Old idea", 100, 100)
+        open_editor
+        load_file
+        within("#cl-confirm") { click_on "Replace" }
+
+        eventually { nodes.pluck(:title).sort == %w(Crowding Tourists) }
+        expect(canvas_labels).to eq(%w(Crowding Tourists))
+
+        click_on "Undo"
+        eventually { nodes.pluck(:id) == [old.id] && links.none? }
+        expect(canvas_labels).to eq(["Old idea"])
+      end
+
+      it "adds the file beside the diagram" do
+        node("Old idea", 100, 100)
+        open_editor
+        load_file
+        within("#cl-confirm") { click_on "Add beside" }
+
+        eventually { nodes.count == 3 }
+        expect(nodes.find_by(title: "Tourists").position_x).to eq(350)
+        expect(canvas_labels).to eq(["Crowding", "Old idea", "Tourists"])
       end
     end
 

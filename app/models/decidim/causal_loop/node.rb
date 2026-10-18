@@ -14,6 +14,11 @@ module Decidim
 
       validates :title, presence: true
 
+      # The node as the editor's JavaScript expects it.
+      def editor_json
+        { id:, title:, description:, position_x:, position_y:, width:, height:, font_size: }
+      end
+
       # Marks the node deleted together with its links, and returns those
       # links, so that undo knows exactly which ones to restore. Links that
       # were deleted earlier, on their own, stay deleted.

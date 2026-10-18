@@ -85,13 +85,14 @@
     <div
       class="cl-editor"
       data-controller="causal-loop-editor"
-      data-causal-loop-editor-nodes-value="<%= @nodes.map { |n| { id: n.id, title: n.title, description: n.description, position_x: n.position_x, position_y: n.position_y, width: n.width, height: n.height, font_size: n.font_size } }.to_json %>"
-      data-causal-loop-editor-links-value="<%= @links.map { |l| { id: l.id, source_node_id: l.source_node_id, target_node_id: l.target_node_id, polarity: l.polarity, label: l.label, cp1_distance: l.cp1_distance.to_f, cp2_distance: l.cp2_distance&.to_f } }.to_json %>"
+      data-causal-loop-editor-nodes-value="<%= @nodes.map(&:editor_json).to_json %>"
+      data-causal-loop-editor-links-value="<%= @links.map(&:editor_json).to_json %>"
       data-causal-loop-editor-nodes-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).nodes_path %>"
       data-causal-loop-editor-links-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).links_path %>"
       data-causal-loop-editor-conversations-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).agent_path %>"
       data-causal-loop-editor-loops-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).loops_path %>"
       data-causal-loop-editor-operations-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).operations_path %>"
+      data-causal-loop-editor-import-url-value="<%= Decidim::EngineRouter.main_proxy(current_component).import_path %>"
       data-causal-loop-editor-editable-value="<%= @editable %>"
       data-causal-loop-editor-csrf-token-value="<%= form_authenticity_token %>"
     >
@@ -128,7 +129,12 @@
         </div>
         <button type="button" id="btn-loops" class="button hollow small" title="List the feedback loops and highlight them">&#x27F3; Loops</button>
         <div style="display:flex; gap:0.25rem; margin-left:0.5rem;">
-          <button type="button" id="btn-export-json"    class="button hollow small">Export JSON</button>
+          <a href="<%= Decidim::EngineRouter.main_proxy(current_component).file_path %>" download class="button hollow small"
+             title="Download the whole diagram, with its layout, as a file that can be loaded again">Save file</a>
+          <% if @editable %>
+            <button type="button" id="btn-load-file" class="button hollow small" title="Load a diagram file saved earlier">Load file…</button>
+            <input type="file" id="cl-file-input" accept=".json,application/json" hidden>
+          <% end %>
           <button type="button" id="btn-export-graphml" class="button hollow small">Export GraphML</button>
           <button type="button" id="btn-save-png"       class="button hollow small">Save PNG</button>
           <button type="button" id="btn-print-pdf"      class="button hollow small">Print / PDF</button>
@@ -188,6 +194,7 @@
           <p id="cl-confirm-message"></p>
           <div class="cl-confirm-buttons">
             <button type="button" id="cl-confirm-cancel" class="button hollow small"></button>
+            <button type="button" id="cl-confirm-alt" class="button button--secondary small" hidden></button>
             <button type="button" id="cl-confirm-ok" class="button button--alert small"></button>
           </div>
         </dialog>
