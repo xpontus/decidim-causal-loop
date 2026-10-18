@@ -2,6 +2,7 @@ name: "[CI] CausalLoop"
 on:
   push:
     branches:
+      - main
       - develop
       - release/*
       - "*-stable"
