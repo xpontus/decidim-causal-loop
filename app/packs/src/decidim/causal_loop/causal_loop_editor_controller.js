@@ -43,6 +43,12 @@ export default class extends Controller {
     // its title, size or font changes, wherever the change came from.
     this.cy.on("add data", "node", (evt) => this.refreshLabel(evt.target));
 
+    // The "No nodes yet" hint is rendered by the server; keep it in step.
+    this.cy.on("add remove", "node", () => {
+      const hint = this.element.querySelector("#cl-empty-hint");
+      if (hint) hint.hidden = this.cy.nodes().length > 0;
+    });
+
     if (this.editableValue) this.setupEditing();
     this.setupViewControls();
     if (this.editableValue) this.setupChat();

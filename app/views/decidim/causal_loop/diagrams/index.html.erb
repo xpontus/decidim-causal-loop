@@ -160,11 +160,9 @@
         <% end %>
       </div>
 
-      <% if @nodes.empty? %>
-        <p style="text-align:center; color:#999; margin-top:1rem;">
-          No nodes yet.<%= @editable ? " Double-click the canvas to start, or ask the AI assistant." : "" %>
-        </p>
-      <% end %>
+      <p id="cl-empty-hint" style="text-align:center; color:#999; margin-top:1rem;" <%= "hidden" if @nodes.any? %>>
+        No nodes yet.<%= @editable ? " Double-click the canvas to start, or ask the AI assistant." : "" %>
+      </p>
 
       <% if @editable %>
         <dialog id="cl-confirm" aria-labelledby="cl-confirm-title">
