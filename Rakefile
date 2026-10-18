@@ -12,6 +12,10 @@ def install_module(path)
   dependencies = JSON.parse(File.read("package.json"))["dependencies"].slice("cytoscape")
 
   Dir.chdir(path) do
+    # The generator always writes these, but they subclass decidim-initiatives,
+    # which this module does not depend on. CI eager-loads the app, so they
+    # would fail with NameError there.
+    rm_f %w(app/services/dummy_signature_handler.rb app/services/dummy_sms_mobile_phone_validator.rb)
     sh "npm", "install", *dependencies.map { |name, version| "#{name}@#{version}" }
     sh "bin/rails", "decidim_causal_loop:install:migrations"
     system("bin/rails", "db:environment:set", "db:drop", err: File::NULL)
