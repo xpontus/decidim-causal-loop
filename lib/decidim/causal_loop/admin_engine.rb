@@ -10,9 +10,10 @@ module Decidim
       paths["lib/tasks"] = nil
 
       routes do
-        resources :diagrams, only: [:index]
-        resources :editors,  only: [:index, :create, :destroy]
-        root to: "diagrams#index"
+        resources :editors, only: [:index, :create, :destroy]
+        # The diagram itself is edited on the public page; what admins manage
+        # here is who may edit it.
+        root to: "editors#index"
       end
 
       def load_seed

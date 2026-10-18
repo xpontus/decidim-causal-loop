@@ -4,3 +4,10 @@ en:
     components:
       causal_loop:
         name: CausalLoop
+    causal_loop:
+      admin:
+        editors:
+          create:
+            created: Editor added.
+          destroy:
+            destroyed: Editor removed.

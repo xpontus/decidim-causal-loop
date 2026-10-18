@@ -1,6 +1,10 @@
 <h2 class="section-heading">Diagram editors</h2>
 
-<p class="help-text">Users listed here may create and edit nodes and links in this component's diagram.</p>
+<p class="help-text">
+  Users listed here may edit this component's diagram, as may organization admins and admins of this space.
+  The diagram is edited on its public page:
+  <%= link_to "open the diagram", Decidim::EngineRouter.main_proxy(current_component).root_path %>.
+</p>
 
 <% if @editors.any? %>
   <table class="table-list">

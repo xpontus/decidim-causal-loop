@@ -135,18 +135,33 @@ Space.
 
 ## Installation
 
-Add this line to your application's Gemfile:
+The module needs **Decidim 0.31.3** exactly (the gemspec pins `decidim-core`
+to the module's version). It is not on RubyGems; add it to the Decidim
+application's Gemfile from GitHub:
 
 ```ruby
-gem "decidim-causal_loop"
+gem "decidim-causal_loop", git: "https://github.com/xpontus/decidim-causal-loop"
 ```
 
-And then execute:
+Then install the gem, the JavaScript library it draws with
+([Cytoscape.js](https://js.cytoscape.org/)), and its database tables, and
+rebuild the assets:
 
 ```bash
 bundle
+npm install cytoscape@^3.30.0
 bin/rails decidim_causal_loop:install:migrations db:migrate
+bin/rails assets:precompile   # in production
 ```
+
+Without the `npm install`, building the assets fails with "Can't resolve
+'cytoscape'".
+
+To add a diagram, an admin opens a participatory space's **Components**,
+chooses **Add component → CausalLoop**, names it and publishes it. **Manage**
+on the component opens **Diagram editors**, where admins choose which
+participants may edit it; organization admins and the space's admins always
+can. Components in the trash are hidden, diagram included, until restored.
 
 Deleted variables and links are kept, hidden, so that they can be restored
 by undo. To remove those deleted more than 30 days ago, run this regularly
