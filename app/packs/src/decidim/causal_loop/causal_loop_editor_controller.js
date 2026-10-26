@@ -10,6 +10,7 @@ export default class extends Controller {
     linksUrl: String,
     conversationsUrl: String,
     loopsUrl: String,
+    archetypesUrl: String,
     operationsUrl: String,
     importUrl: String,
     editable: Boolean,
@@ -378,12 +379,18 @@ export default class extends Controller {
       mode = choice === "alt" ? "add" : "replace";
     }
 
+    await this.importDiagram(diagram, mode, file.name);
+  }
+
+  // Sends a diagram in the file format to the server, then draws the result
+  // and records it as one undoable step. Also used to copy an archetype in.
+  async importDiagram(diagram, mode, name) {
     this.updateStatus("Loading…");
     const resp = await this.apiRequest(this.importUrlValue, "POST", { diagram, mode }).catch(() => null);
     this.updateStatus("");
     const body = await resp?.json().catch(() => ({})) ?? {};
     if (!resp?.ok) {
-      this.showToast(`Could not load ${file.name}: ${(body.errors || []).join(", ") || "network error"}.`, { duration: 10000 });
+      this.showToast(`Could not load ${name}: ${(body.errors || []).join(", ") || "network error"}.`, { duration: 10000 });
       return;
     }
 
@@ -392,7 +399,7 @@ export default class extends Controller {
     const added = this.change("",
       [...body.nodes.map(n => this.restoreOp("node", n)), ...body.links.map(l => this.restoreOp("link", l))],
       [...body.links.map(l => this.deleteOp("link", l.id)), ...body.nodes.map(n => this.deleteOp("node", n.id))]);
-    const command = this.combine(`load “${file.name}”`, [replaced, added]);
+    const command = this.combine(`load “${name}”`, [replaced, added]);
     this.removeBendHandles();
     command.forward.forEach(operation => this.applyToCanvas(operation));
     this.commands.record(command);
@@ -1125,6 +1132,7 @@ export default class extends Controller {
       this.cy.fit(this.cy.elements(), 40);
     });
     this.setupLoops();
+    this.setupArchetypes();
     this.setupHelp();
     this.element.querySelector("#btn-export-graphml") ?.addEventListener("click", () => this.exportGraphml());
     this.element.querySelector("#btn-save-png")      ?.addEventListener("click", () => this.savePng());
@@ -1261,6 +1269,217 @@ export default class extends Controller {
     loop.link_ids.forEach(id => { members.merge(this.cy.$(`#l${id}`)); });
     this.cy.elements().not(members).addClass("cl-dim");
     members.addClass("cl-in-loop");
+  }
+
+  // ---- Archetypes ----
+
+  // The archetypes panel shows the system archetypes shipped with the module
+  // (config/archetypes.yml): common patterns of feedback loops, each drawn on
+  // a small canvas of its own with how to recognise it and where its
+  // leverage lies. It covers the left of the canvas, so the diagram stays in
+  // view beside it. Editors can copy an archetype into their diagram.
+  setupArchetypes() {
+    const button = this.element.querySelector("#btn-archetypes");
+    button?.addEventListener("click", () => {
+      if (this.archetypesPanel) this.closeArchetypes();
+      else this.openArchetypes();
+    });
+    // Capture phase: see setupHelp.
+    this.onArchetypesKeyDown = (e) => { if (e.key === "Escape" && this.archetypesPanel) this.closeArchetypes(); };
+    document.addEventListener("keydown", this.onArchetypesKeyDown, true);
+  }
+
+  async openArchetypes() {
+    const panel = document.createElement("div");
+    panel.className = "cl-archetypes";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "System archetypes");
+    panel.innerHTML = `<div class="cl-archetypes-header"><span>System archetypes</span>
+      <button type="button" aria-label="Close archetypes">&#x2715;</button></div>
+      <div class="cl-archetypes-main"><nav class="cl-archetypes-list"></nav>
+      <div class="cl-archetype-detail"><p>Loading archetypes…</p></div></div>`;
+    panel.querySelector(".cl-archetypes-header button").addEventListener("click", () => this.closeArchetypes());
+    // Finding archetypes in the diagram is the AI assistant's work (its
+    // list_archetypes tool), so only editors, who have the assistant, get it.
+    if (this.editableValue) {
+      const find = document.createElement("button");
+      find.type = "button";
+      find.className = "cl-archetypes-find";
+      find.textContent = "Which fit my diagram?";
+      find.title = "Ask the AI assistant which archetypes fit your diagram, what may be missing, and where the leverage is";
+      find.addEventListener("click", () => this.askAboutArchetypes());
+      panel.querySelector(".cl-archetypes-header span").after(find);
+    }
+    this.cyContainer.appendChild(panel);
+    this.archetypesPanel = panel;
+    this.element.querySelector("#btn-archetypes")?.setAttribute("aria-expanded", "true");
+
+    if (!this.archetypes) {
+      try {
+        const resp = await fetch(this.archetypesUrlValue, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        if (!resp.ok) throw new Error(`error ${resp.status}`);
+        this.archetypes = await resp.json();
+      } catch (err) {
+        panel.querySelector(".cl-archetype-detail").textContent = `Could not load the archetypes (${err.message}).`;
+        return;
+      }
+    }
+    if (this.archetypesPanel !== panel) return;
+    this.renderArchetypeList();
+    this.showArchetype(this.archetypes.archetypes.find(a => a.key === this.currentArchetypeKey) || this.archetypes.archetypes[0]);
+  }
+
+  closeArchetypes() {
+    this.archetypeCy?.destroy();
+    this.archetypeCy = null;
+    this.archetypesPanel?.remove();
+    this.archetypesPanel = null;
+    this.element.querySelector("#btn-archetypes")?.setAttribute("aria-expanded", "false");
+  }
+
+  renderArchetypeList() {
+    const nav = this.archetypesPanel.querySelector(".cl-archetypes-list");
+    let category = null;
+    this.archetypes.archetypes.forEach(archetype => {
+      if (archetype.category !== category) {
+        category = archetype.category;
+        const heading = document.createElement("h5");
+        heading.textContent = category;
+        nav.appendChild(heading);
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.key = archetype.key;
+      const code = document.createElement("span");
+      code.className = "cl-archetype-code";
+      code.textContent = archetype.code;
+      button.append(code, archetype.name);
+      button.addEventListener("click", () => this.showArchetype(archetype));
+      nav.appendChild(button);
+    });
+  }
+
+  showArchetype(archetype) {
+    this.currentArchetypeKey = archetype.key;
+    this.archetypesPanel.querySelectorAll(".cl-archetypes-list button").forEach(b => {
+      b.setAttribute("aria-current", String(b.dataset.key === archetype.key));
+    });
+
+    const detail = this.archetypesPanel.querySelector(".cl-archetype-detail");
+    detail.replaceChildren();
+    detail.scrollTop = 0;
+    const add = (tag, text, className = null) => {
+      const el = document.createElement(tag);
+      if (text) el.textContent = text;
+      if (className) el.className = className;
+      detail.appendChild(el);
+      return el;
+    };
+    const list = (heading, items) => {
+      if (!items?.length) return;
+      add("h5", heading);
+      const ul = add("ul");
+      items.forEach(item => { const li = document.createElement("li"); li.textContent = item; ul.appendChild(li); });
+    };
+
+    add("h4", `${archetype.code} ${archetype.name}`);
+    add("div", [archetype.category, archetype.also_known_as && `also known as ${archetype.also_known_as}`]
+      .filter(Boolean).join(" · "), "cl-archetype-meta");
+    add("p", archetype.summary);
+
+    if (this.editableValue) {
+      const actions = add("div", null, "cl-archetype-actions");
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy into my diagram";
+      copy.title = "Add this archetype's variables and links beside your diagram, then rename them to your own. You can undo it.";
+      copy.addEventListener("click", () => this.copyArchetype(archetype));
+      actions.appendChild(copy);
+    }
+
+    const canvas = add("div", null, "cl-archetype-canvas");
+    const loops = add("div", null, "cl-archetype-loops");
+    archetype.loops.forEach(loop => {
+      const item = document.createElement("span");
+      const badge = document.createElement("span");
+      badge.className = `cl-loop-badge cl-loop-badge--${loop.type}`;
+      badge.textContent = loop.name;
+      item.append(badge, ` ${[...loop.nodes, loop.nodes[0]].join(" → ")}`);
+      loops.appendChild(item);
+    });
+
+    list("How to recognise it", archetype.recognise);
+    list("Where the leverage is", archetype.leverage);
+    const points = (archetype.ms08_leverage_points || []).map(code => {
+      const point = this.archetypes.leverage_points.find(p => p.code === code);
+      return point ? `${point.code} ${point.title} (${point.type})` : code;
+    });
+    list("Related MS08 leverage points", points);
+    if (archetype.transcription_notes) add("div", `Transcription note: ${archetype.transcription_notes}`, "cl-archetype-note");
+
+    this.drawArchetype(canvas, archetype);
+  }
+
+  // Opens the AI assistant and asks it to match the diagram against the
+  // archetypes, following the SYSTEM ARCHETYPES part of its instructions.
+  askAboutArchetypes() {
+    const input = this.element.querySelector("#cl-chat-input");
+    if (!input) return;
+    if (input.disabled) {
+      this.showToast("The AI assistant is still busy. Try again when it has answered.");
+      return;
+    }
+    if (!this.workspace?.classList.contains("is-chat-open")) this.element.querySelector("#btn-ai-chat")?.click();
+    input.value = "Which system archetypes fit this diagram? For the best matches, say which of our variables " +
+                  "play which role, what may be missing, where the leverage is, and what a facilitator could ask " +
+                  "the participants.";
+    this.sendChatMessage();
+  }
+
+  // The archetype on a read-only canvas of its own. Delayed links carry the
+  // usual "||" mark next to their sign.
+  drawArchetype(container, archetype) {
+    this.archetypeCy?.destroy();
+    const id = (title) => `a${archetype.nodes.indexOf(title)}`;
+    this.archetypeCy = cytoscape({
+      container,
+      style: [
+        ...this.graphStyles(),
+        { selector: "edge[?delay]", style: { "label": "data(signLabel)" } }
+      ],
+      elements: [
+        ...archetype.nodes.map(title => ({ data: { id: id(title), label: title, ...this.labelLayout(title, 130, 44, 12), fontSize: 12 } })),
+        ...archetype.links.map((l, i) => ({
+          data: { id: `e${i}`, source: id(l.from), target: id(l.to), polarity: l.polarity, delay: l.delay,
+                  signLabel: `${l.polarity === "negative" ? "−" : "+"}  ||` }
+        }))
+      ],
+      layout: { name: "cose", animate: false, randomize: true, nodeRepulsion: () => 12000, idealEdgeLength: () => 90, nodeOverlap: 20, gravity: 0.5, numIter: 2000, padding: 20 },
+      userZoomingEnabled: true,
+      boxSelectionEnabled: false,
+      autoungrabify: false,
+      autounselectify: true
+    });
+    this.archetypeCy.fit(undefined, 20);
+  }
+
+  // Adds the archetype beside the diagram, laid out as on its canvas, through
+  // the same path as loading a file, so it is one undoable step. Variables
+  // whose names already exist in the diagram are linked to, not duplicated.
+  async copyArchetype(archetype) {
+    const positions = {};
+    this.archetypeCy?.nodes().forEach(n => { positions[n.data("label")] = n.position(); });
+    const diagram = {
+      nodes: archetype.nodes.map((title, i) => ({
+        id: `a${i}`, title,
+        description: `From the archetype ${archetype.code} ${archetype.name}`,
+        position_x: positions[title]?.x ?? (i % 4) * 180, position_y: positions[title]?.y ?? Math.floor(i / 4) * 100
+      })),
+      links: archetype.links.map(l => ({
+        source: `a${archetype.nodes.indexOf(l.from)}`, target: `a${archetype.nodes.indexOf(l.to)}`, polarity: l.polarity
+      }))
+    };
+    await this.importDiagram(diagram, "add", `${archetype.code} ${archetype.name}`);
   }
 
   // The editor covers the window, hiding Decidim's header and footer.
@@ -1440,13 +1659,22 @@ export default class extends Controller {
     let finished = false;
     this.beginAiStep(text);
 
+    // A local model can take minutes, so show that it is still working.
+    const started = Date.now();
+    const showPending = () => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      const wait = seconds < 3 ? "Thinking…" : `Thinking… ${seconds} s` + (seconds >= 20 ? " (a long answer can take a few minutes)" : "");
+      pending.textContent = [...steps, wait].join("\n");
+    };
+    const ticker = setInterval(showPending, 1000);
+
     // The reply streams in as one JSON event per line (see
     // ConversationsController): progress after each tool call, with the
     // changes it made, which are drawn at once; then done or error.
     const handle = (event) => {
       if (event.type === "progress") {
         steps.push(event.text);
-        pending.textContent = [...steps, "Thinking…"].join("\n");
+        showPending();
         this.applyAiActions(event.actions || []);
       } else if (event.type === "done") {
         finished = true;
@@ -1485,6 +1713,7 @@ export default class extends Controller {
     } catch (err) {
       handle({ type: "error", error: `Network error: ${err.message}` });
     } finally {
+      clearInterval(ticker);
       pending.remove();
       this.finishAiStep();
       input.disabled = false;
@@ -1642,6 +1871,8 @@ export default class extends Controller {
     this.hideToast();
     clearTimeout(this.loopsRefreshTimer);
     document.removeEventListener("keydown", this.onLoopsKeyDown, true);
+    document.removeEventListener("keydown", this.onArchetypesKeyDown, true);
+    this.archetypeCy?.destroy();
     document.removeEventListener("keydown", this.onHelpKeyDown, true);
     document.documentElement.classList.remove("cl-full-view");
     this.cy?.destroy();

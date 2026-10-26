@@ -103,6 +103,16 @@ module Decidim::CausalLoop
           Node.where(decidim_component_id: component.id).pluck(:title)
         end
 
+        it "gives the agent the archetypes, with links in a compact form" do
+          run_tools(["list_archetypes", {}])
+
+          result = JSON.parse(tool_results.sole)
+          fixes = result["archetypes"].find { |a| a["code"] == "FL3" }
+          expect(fixes["links"]).to include("Fix -> Unintended consequence (+, delay)", "Fix -> Problem symptom (-)")
+          expect(fixes["loops"]).to include("B1: Problem symptom -> Fix")
+          expect(result["leverage_points"].first).to include("code" => "L1")
+        end
+
         it "creates several nodes in one call, without overlapping them" do
           run_tools(["create_nodes", { "titles" => %w(Fishing Tourism Mining FishStock Pollution IslandIncome) }])
 

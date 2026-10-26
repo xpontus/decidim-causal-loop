@@ -102,6 +102,7 @@ module Decidim
         return done.join(", ") if done.any?
 
         { "list_graph" => "Read the diagram", "find_loops" => "Found the loops",
+          "list_archetypes" => "Read the system archetypes",
           "clear_diagram" => "Set the old diagram aside" }.fetch(name, "Worked on the diagram")
       end
 
@@ -144,6 +145,9 @@ module Decidim
 
         when "find_loops"
           LoopFinder.report(@nodes, @links).to_json
+
+        when "list_archetypes"
+          archetypes_for_agent.to_json
 
         when "create_node"
           title = input["title"].to_s.strip
@@ -395,7 +399,32 @@ module Decidim
             bold. Use short paragraphs, and lists with "-" at the start of a line.
           - Answer questions without tools — only call tools when actually modifying the diagram.
           - If a user describes a system (e.g. "staff burnout"), suggest a starter diagram and build it.
+
+          SYSTEM ARCHETYPES
+          The diagram is often a partial hypothesis about a real place. Archetypes help to extend it
+          and to find leverage points. When the user asks which archetypes fit, what is missing, or
+          where the leverage is:
+          - Call find_loops and list_archetypes, then compare the diagram's loops with each
+            archetype's loops: their types (R or B), the roles the variables play, and delays.
+          - Name the one to three archetypes that fit best, by code and name (e.g. "FL3 Fixes that
+            fail"), and say which of the user's variables play which role in it. Present them as
+            hypotheses to discuss, not as facts, and say how well each one fits.
+          - Point out what the archetype suggests is missing (variables, links or delays) as a
+            proposal. Only add it to the diagram when the user approves.
+          - Name the archetype's leverage, and the related MS08 leverage points by code (L1-L10).
+          - Suggest one or two of the archetype's questions that a workshop facilitator could ask
+            the participants to test the hypothesis.
         PROMPT
+      end
+
+      # The archetypes in a compact form: links as "A -> B (+, delay)".
+      def archetypes_for_agent
+        archetypes = Archetypes.all.map do |a|
+          links = a[:links].map { |l| "#{l[:from]} -> #{l[:to]} (#{l[:polarity] == "negative" ? "-" : "+"}#{", delay" if l[:delay]})" }
+          a.slice(:code, :name, :also_known_as, :category, :summary, :recognise, :leverage, :ms08_leverage_points)
+           .merge(variables: a[:nodes], links:, loops: a[:loops].map { |l| "#{l[:name]}: #{l[:nodes].join(" -> ")}" })
+        end
+        { archetypes:, leverage_points: Archetypes.leverage_points }
       end
 
       def tool_definitions
@@ -410,6 +439,14 @@ module Decidim
             description: "Finds every feedback loop in the diagram and labels it reinforcing (R, even " \
                          "number of negative links) or balancing (B, odd number). Use this for any question " \
                          "about loops instead of working them out yourself.",
+            input_schema: { type: "object", properties: {}, required: [] }
+          },
+          {
+            name: "list_archetypes",
+            description: "Returns the system archetypes (common patterns of feedback loops, from the RURBANIVE " \
+                         "knowledge inventory MS08): each one's variables, links with polarity and delay, loops, " \
+                         "how to recognise it and where its leverage is, plus the MS08 leverage points L1-L10. " \
+                         "Use it for any question about archetypes, patterns or leverage points.",
             input_schema: { type: "object", properties: {}, required: [] }
           },
           {

@@ -1,0 +1,314 @@
+# The eight generic system archetypes of the RURBANIVE knowledge inventory
+# (milestone MS08, "Feedback loops to consider for cooperation and connection
+# of rural and urban areas"), transcribed by hand from its figures FL1-FL8.
+#
+# Variables and links follow the figures, including their signs and the delay
+# marks (||) on links. Where a figure leaves something open, the archetype's
+# `transcription_notes` say what was assumed; check those against the source.
+#
+# `recognise` and `leverage` are general systems-thinking guidance, after
+# Kim, Systems Archetypes I (2000), which MS08 cites; they are not part of the
+# MS08 figures. `ms08_leverage_points` refers to the leverage points L1-L10 at
+# the end of this file.
+#
+# Each link is [from, to, polarity] or [from, to, polarity, delay].
+
+archetypes:
+  - key: fl1
+    code: FL1
+    name: Eroding ambitions
+    also_known_as: Eroding goals
+    category: Time-delayed responses
+    summary: >-
+      When interventions take time to have an impact, the gap between the
+      current and the desired system stays open, and the pressure to close it
+      by lowering the goal grows. Ambitions slide, for example from systemic
+      wellbeing to the number of jobs created.
+    recognise:
+      - Have targets been quietly lowered or redefined over time?
+      - Is the goal being adjusted to what was achieved, rather than the other way round?
+      - Do interventions take a long time before they show any effect?
+    leverage:
+      - Anchor the goal in a shared long-term vision that is not renegotiated whenever results are slow.
+      - Make the delay visible, so that slow results are not read as failure.
+      - Connect every intervention to the long-term goal, such as wellbeing.
+    ms08_leverage_points: [L1, L5]
+    nodes:
+      - Goal
+      - Gap between current and desired system
+      - Pressure to lower goal
+      - Interventions
+      - Impact
+    links:
+      - [Goal, Gap between current and desired system, positive]
+      - [Gap between current and desired system, Pressure to lower goal, positive]
+      - [Pressure to lower goal, Goal, negative]
+      - [Gap between current and desired system, Interventions, positive]
+      - [Interventions, Impact, positive, delay]
+      - [Impact, Gap between current and desired system, negative]
+
+  - key: fl2
+    code: FL2
+    name: Downplayed problems
+    category: Time-delayed responses
+    summary: >-
+      A strong focus on economic development and migration feeds itself, while
+      the wellbeing that suffers from it is downplayed. Investments in
+      wellbeing come late and build capacity only after a further delay.
+    recognise:
+      - Is one goal, such as growth or attracting people, pursued at the expense of another that gets less attention?
+      - Is the need to invest only acknowledged once the problem is already visible?
+      - Do investments arrive too late to keep up with the growth they should support?
+    leverage:
+      - Invest in capacity ahead of the need, based on where the growth is heading.
+      - Keep wellbeing as an explicit goal next to economic development.
+      - Shorten the delay between seeing a need and acting on it.
+    ms08_leverage_points: [L1, L4, L7]
+    nodes:
+      - Economic development
+      - Migration
+      - Wellbeing
+      - Perceived need to invest in wellbeing
+      - Investments made
+      - Capacity
+    links:
+      - [Economic development, Migration, positive]
+      - [Migration, Economic development, positive]
+      - [Migration, Wellbeing, negative]
+      - [Wellbeing, Migration, positive]
+      - [Wellbeing, Perceived need to invest in wellbeing, negative]
+      - [Perceived need to invest in wellbeing, Investments made, positive, delay]
+      - [Investments made, Capacity, positive, delay]
+      - [Capacity, Wellbeing, positive]
+    transcription_notes: >-
+      The figure has a second arrow (+) into "Perceived need to invest in
+      wellbeing" whose source is not drawn; it is left out. The figure spells
+      "Percieved".
+
+  - key: fl3
+    code: FL3
+    name: Fixes that fail
+    category: Unanticipated side-effects
+    summary: >-
+      A quick fix eases the problem symptom, but after a delay it causes an
+      unintended consequence that makes the symptom worse again, which calls
+      for more of the same fix.
+    recognise:
+      - Did a measure work at first, and does the problem now keep coming back?
+      - Are we applying more of the same solution each time?
+      - Has anyone mapped what else the fix changes, further away or later in time?
+    leverage:
+      - Look for the side effects of the fix before scaling it up.
+      - Address the underlying problem, not only the symptom.
+      - Use the fix only to gain time while working on a fundamental solution.
+    ms08_leverage_points: [L4, L8, L9]
+    nodes:
+      - Problem symptom
+      - Fix
+      - Unintended consequence
+    links:
+      - [Problem symptom, Fix, positive]
+      - [Fix, Problem symptom, negative]
+      - [Fix, Unintended consequence, positive, delay]
+      - [Unintended consequence, Problem symptom, positive]
+
+  - key: fl4
+    code: FL4
+    name: Band-aid solutions
+    also_known_as: Shifting the burden
+    category: Unanticipated side-effects
+    summary: >-
+      A symptomatic solution, here subsidised fossil fuels, relieves the
+      immediate need and takes away the urgency for the fundamental solution,
+      climate resilience and sustainability efforts, which only pay off after
+      a delay.
+    recognise:
+      - Is there a quick solution that takes away the urgency for a slower, fundamental one?
+      - Does the community depend more and more on that quick solution?
+      - Are conflicting goals balanced by short-term measures rather than resolved?
+    leverage:
+      - Strengthen the fundamental solution, even while the symptomatic one is still needed.
+      - Make the long-term cost of the band-aid visible to everyone involved.
+      - Agree on a plan to phase the symptomatic solution out.
+    ms08_leverage_points: [L1, L3, L5]
+    nodes:
+      - Wellbeing
+      - Need for heating
+      - Subsidised fossil fuels
+      - Urgency for climate mitigation and adaptation
+      - Perceived need for action
+      - Climate resilience and sustainability efforts
+    links:
+      - [Wellbeing, Need for heating, positive]
+      - [Need for heating, Subsidised fossil fuels, positive]
+      - [Subsidised fossil fuels, Wellbeing, negative]
+      - [Subsidised fossil fuels, Urgency for climate mitigation and adaptation, positive]
+      - [Urgency for climate mitigation and adaptation, Climate resilience and sustainability efforts, positive]
+      - [Wellbeing, Perceived need for action, positive]
+      - [Perceived need for action, Climate resilience and sustainability efforts, positive]
+      - [Climate resilience and sustainability efforts, Wellbeing, negative, delay]
+    transcription_notes: >-
+      The link from "Need for heating" to "Subsidised fossil fuels" has no
+      sign in the figure; positive is assumed. The signs are transcribed as
+      drawn, although some read unexpectedly (for example, sustainability
+      efforts lowering wellbeing); check them with the author.
+
+  - key: fl5
+    code: FL5
+    name: Escalating tensions
+    also_known_as: Escalation
+    category: Path dependencies
+    summary: >-
+      Housing and infrastructure each react to the other: more housing puts
+      pressure on infrastructure, more infrastructure attracts more demand for
+      housing. Each side's response triggers the next, and the cycle builds on
+      historical patterns instead of a joint vision.
+    recognise:
+      - Do two parts of the system, or two actors, keep reacting to each other?
+      - Is each step justified by what the other side did last?
+      - Are plans based on how things have always grown, rather than on a shared future?
+    leverage:
+      - Form a joint vision with the actors on both sides.
+      - Plan the two sides together rather than one in response to the other.
+      - Bring in a diverse set of actors to challenge the usual way of thinking.
+    ms08_leverage_points: [L1, L3, L4]
+    nodes:
+      - Infrastructure available relative to housing stock
+      - Demand for housing
+      - Housing construction
+      - Housing stock
+      - Pressure on available infrastructure
+      - Infrastructure construction
+    links:
+      - [Infrastructure available relative to housing stock, Demand for housing, positive]
+      - [Demand for housing, Housing construction, positive]
+      - [Housing construction, Housing stock, positive]
+      - [Housing stock, Infrastructure available relative to housing stock, negative]
+      - [Infrastructure available relative to housing stock, Pressure on available infrastructure, negative]
+      - [Pressure on available infrastructure, Infrastructure construction, positive]
+      - [Infrastructure construction, Infrastructure available relative to housing stock, positive]
+    transcription_notes: >-
+      The figure has two variables both labelled "Infrastructure
+      construction", one feeding the other (+). They are merged into one here.
+
+  - key: fl6
+    code: FL6
+    name: Success to the successful
+    category: Path dependencies
+    summary: >-
+      Resources go to what already performs well. Industrial development
+      generates economic development, which draws more resources its way,
+      while natural ecosystem development, which pulls resources the other
+      way, falls behind.
+    recognise:
+      - Does one sector or area get more resources because it already did well?
+      - Is something important losing out simply because it started with less?
+      - Are allocation decisions based on past results rather than on shared goals?
+    leverage:
+      - Set goals that value both activities, not only the one that succeeds now.
+      - Make the allocation rule explicit and agree on it together.
+      - Give the weaker activity resources of its own, outside the competition.
+    ms08_leverage_points: [L1, L6, L7]
+    nodes:
+      - Resource allocation
+      - Resources for industrial development
+      - Economic development
+      - Resources for ecosystem restoration
+      - Natural ecosystem development
+    links:
+      - [Resource allocation, Resources for industrial development, positive]
+      - [Resources for industrial development, Economic development, positive]
+      - [Economic development, Resource allocation, positive]
+      - [Resource allocation, Resources for ecosystem restoration, positive]
+      - [Resources for ecosystem restoration, Natural ecosystem development, positive]
+      - [Natural ecosystem development, Resource allocation, negative]
+    transcription_notes: >-
+      In Kim's version, the allocation favours one side and is negative
+      towards the other. Here "Resource allocation" to ecosystem restoration
+      is positive, as drawn.
+
+  - key: fl7
+    code: FL7
+    name: Limits to progress
+    also_known_as: Limits to growth
+    category: Limiting condition effects
+    summary: >-
+      Technology projects and energy production reinforce each other, but
+      production consumes natural resources, and their falling availability
+      eventually slows production down. Pushing growth harder only brings the
+      limit closer.
+    recognise:
+      - Did something grow well at first and then slow down, despite the same effort?
+      - Is there a resource, capacity or group of people that is running short?
+      - Are there limiting conditions such as a lack of qualified labour?
+    leverage:
+      - Find and act on the limiting condition, rather than pushing the growth harder.
+      - Look for the limit before it is reached, while there is still time to plan.
+      - Balance supply and demand, for example across the life cycle stages of tourism.
+    ms08_leverage_points: [L4, L7, L10]
+    nodes:
+      - Technology projects
+      - Energy supply and production
+      - Natural resource consumption
+      - Natural resource availability
+    links:
+      - [Technology projects, Energy supply and production, positive]
+      - [Energy supply and production, Technology projects, positive]
+      - [Energy supply and production, Natural resource consumption, positive]
+      - [Natural resource consumption, Natural resource availability, negative]
+      - [Natural resource availability, Energy supply and production, positive]
+
+  - key: fl8
+    code: FL8
+    name: Tragedy of the commons
+    category: Limiting condition effects
+    summary: >-
+      Several activities, here food and energy production, draw on a shared
+      resource. Each grows on its own, but together they use up the common
+      water, and the cost of water then rises for every activity, after a
+      delay.
+    recognise:
+      - Do several actors or activities use the same limited resource?
+      - Does each one gain from using more, while the cost is shared by all?
+      - Is the shared resource, such as water, energy, land or labour, getting scarcer?
+    leverage:
+      - Govern the shared resource together, with rules all users agree on.
+      - Make each user's share of the total use and its consequences visible.
+      - Share data on the state of the resource across all users.
+    ms08_leverage_points: [L3, L6, L10]
+    nodes:
+      - Food production
+      - Water consumption for food
+      - Energy production
+      - Water consumption for energy
+      - Total water consumption
+      - Cost of water consumption per activity
+      - Available water resources
+    links:
+      - [Food production, Water consumption for food, positive]
+      - [Water consumption for food, Food production, positive]
+      - [Energy production, Water consumption for energy, positive]
+      - [Water consumption for energy, Energy production, positive]
+      - [Water consumption for food, Total water consumption, positive]
+      - [Water consumption for energy, Total water consumption, positive]
+      - [Total water consumption, Cost of water consumption per activity, positive, delay]
+      - [Available water resources, Cost of water consumption per activity, negative]
+      - [Cost of water consumption per activity, Food production, negative]
+      - [Cost of water consumption per activity, Energy production, negative]
+    transcription_notes: >-
+      The link from "Available water resources" has no sign in the figure;
+      negative is assumed (more water, lower cost). The figure has a stray
+      "−" near "Water consumption for food" that belongs to no arrow.
+
+# MS08, "Leverage points - based on established body of knowledge".
+leverage_points:
+  - { code: L1, type: How we set goals, title: Develop a wellbeing model from an emergent, contextual rural-urban starting point }
+  - { code: L2, type: How we see systems, title: Identify local strengths and heritage resources }
+  - { code: L3, type: Information flows, title: Include and listen to all relevant actors in the system }
+  - { code: L4, type: Mindsets, title: Create an inventory of drivers of change }
+  - { code: L5, type: Positive feedback, title: Celebrate short-term wins }
+  - { code: L6, type: How we structure systems, title: Public procurement }
+  - { code: L7, type: How we see systems, title: Consider and connect different types of community capital }
+  - { code: L8, type: Information flows, title: Learn from others to find pathways forward }
+  - { code: L9, type: Information flows, title: Learn from others to find pathways forward (SmartCulTour interventions) }
+  - { code: L10, type: Information flows, title: Digital information and data sharing }

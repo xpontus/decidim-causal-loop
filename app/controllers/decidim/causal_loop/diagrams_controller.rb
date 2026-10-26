@@ -16,6 +16,12 @@ module Decidim
                                        Link.where(decidim_component_id: current_component.id).to_a)
       end
 
+      # The system archetypes, for the editor's archetypes panel. They are the
+      # same for every diagram.
+      def archetypes
+        render json: Archetypes.catalogue
+      end
+
       # The whole diagram as a file that "Load file" can read back.
       def file
         name = translated_attribute(current_component.name).parameterize.presence || "causal-loop-diagram"

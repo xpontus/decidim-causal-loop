@@ -17,6 +17,7 @@ module Decidim
         post "import", to: "imports#create", as: :import
         post "agent", to: "conversations#create", as: :agent
         get "loops", to: "diagrams#loops", as: :loops
+        get "archetypes", to: "diagrams#archetypes", as: :archetypes
         root to: "diagrams#index"
       end
 
