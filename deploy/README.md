@@ -12,8 +12,11 @@ server, for a group whose accounts an administrator creates:
   them out.
 - The site is private by default: visitors must log in to read anything.
 
-The server installs from a clone of this repository, never from a copy of a
-development machine, so every installation also tests these instructions.
+The server installs from a git clone of this repository, never from a copied
+working tree, so every installation also tests these instructions and every
+deployed state is a commit. The clone can come from GitHub, or from a bare
+repository on the server that a development machine pushes to (see
+[Deploying from a development machine](#deploying-from-a-development-machine)).
 Secrets are generated on the server and stay there.
 
 | File | Purpose |
@@ -23,7 +26,7 @@ Secrets are generated on the server and stay there.
 | `make_env.sh` | writes the environment file with a new `SECRET_KEY_BASE` |
 | `setup_organization.rb` | system administrator, organization, first administrator, optionally a process with a diagram |
 | `create_user.rb` | adds a participant, administrator or diagram editor; resets passwords |
-| `update.sh` | deploys the latest `main`: pull, migrate (after a database dump), rebuild assets, restart |
+| `update.sh` | deploys a branch (default `main`): fetch, migrate (after a database dump), rebuild assets, restart |
 | `decidim.service` | systemd user unit for Puma |
 | `Caddyfile.example` | reverse proxy |
 
@@ -156,14 +159,43 @@ editors** page.
 
 ## Updates
 
-After a change is pushed to `main`:
+After a change is pushed to `origin`:
 
 ```bash
-cd /opt/rurbanive/decidim-module-causal_loop && m deploy/update.sh
+cd /opt/rurbanive/decidim-module-causal_loop && m deploy/update.sh            # main
+cd /opt/rurbanive/decidim-module-causal_loop && m deploy/update.sh my-branch  # another branch
 ```
 
-It refuses to run if the checkout has local changes. It dumps the database
-to `backups/` before migrating.
+It refuses to run if the checkout has local changes, because code is never
+edited on the server. It dumps the database to `backups/` before migrating.
+
+## Deploying from a development machine
+
+To test changes on the server without publishing them, let the server's
+checkout follow a bare repository on the server instead of GitHub, and push
+to it over ssh. In step 3, replace the `git clone` from GitHub with:
+
+```bash
+git init --bare /opt/rurbanive/causal_loop.git
+```
+
+On the development machine (`myserver` is its ssh name):
+
+```bash
+git remote add server myserver:/opt/rurbanive/causal_loop.git
+git push server main                    # or any branch
+```
+
+Then on the server:
+
+```bash
+cd /opt/rurbanive
+git clone causal_loop.git decidim-module-causal_loop
+```
+
+From then on, deploy with `git push server <branch>` and
+`m deploy/update.sh <branch>` on the server. Only committed changes reach the
+server; commit work in progress on a branch to try it.
 
 ## Maintenance
 

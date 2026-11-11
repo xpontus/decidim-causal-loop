@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Deploys the current main branch of the module to a running instance:
-# pull, install gems and migrations, back up the database, migrate, rebuild
-# the assets, restart. Stops at the first error.
+# Deploys a branch of the module (default: main) to a running instance:
+# fetch from origin, check it out, install gems and migrations, back up the
+# database, migrate, rebuild the assets, restart. Stops at the first error.
 #
-#   mise exec ruby@3.3.11 node@22.14.0 -- deploy/update.sh [APP_NAME]
+#   mise exec ruby@3.3.11 node@22.14.0 -- deploy/update.sh [BRANCH [APP_NAME]]
+#
+# origin is whatever the checkout was cloned from: GitHub, or a bare
+# repository on the server that a development machine pushes to.
 set -euo pipefail
 
 MODULE_DIR=$(cd "$(dirname "$0")/.." && pwd)
 PARENT=$(dirname "$MODULE_DIR")
-APP_DIR="$PARENT/${1:-decidim_app}"
+BRANCH=${1:-main}
+APP_DIR="$PARENT/${2:-decidim_app}"
 ENV_FILE="$PARENT/decidim.env"
 BACKUPS="$PARENT/backups"
 UNIT=${DECIDIM_UNIT:-decidim}
@@ -18,10 +22,11 @@ die() { echo "update: $*" >&2; exit 1; }
 cd "$MODULE_DIR"
 [ -z "$(git status --porcelain)" ] || die "the module checkout has local changes; code is never edited on the server"
 git fetch --quiet origin
-git checkout --quiet main
-git pull --quiet --ff-only origin main
+# The checkout only follows origin and is never edited, so a reset (rather
+# than a fast-forward) also handles branches that were rewritten or switched.
+git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 commit=$(git rev-parse --short HEAD)
-echo "== Module at $commit: $(git log -1 --format=%s)"
+echo "== Module at $commit ($BRANCH): $(git log -1 --format=%s)"
 
 cd "$APP_DIR"
 set -a
