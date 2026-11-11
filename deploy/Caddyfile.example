@@ -1,0 +1,18 @@
+# Caddy in front of Puma. Replace decidim.example.org with the instance's name;
+# it must equal the Decidim organization's host (or one of its secondary hosts).
+#
+# While the name has no public DNS entry, or the server cannot be reached from
+# the internet, Let's Encrypt cannot issue a certificate: use "tls internal"
+# (Caddy's own CA; browsers warn until its root certificate is trusted).
+decidim.example.org {
+	# tls internal
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000 {
+		# the AI assistant streams its progress; pass it through unbuffered
+		flush_interval -1
+	}
+}
+
+# Before DNS exists: use the server's IP address as the site address (with
+# "tls internal") and as the Decidim organization's host. Decidim redirects
+# secondary hosts to the main host, so an IP as a secondary host does not help.

@@ -1,0 +1,20 @@
+# systemd user unit for Puma. Install (as the user who owns the checkout):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/decidim.service ~/.config/systemd/user/
+#   (edit WorkingDirectory, EnvironmentFile and the mise path if they differ)
+#   systemctl --user daemon-reload && systemctl --user enable --now decidim
+# so that it runs without a login session, once, with sudo:
+#   sudo loginctl enable-linger "$USER"
+[Unit]
+Description=Decidim with the causal loop module (Puma)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/rurbanive/decidim_app
+EnvironmentFile=/opt/rurbanive/decidim.env
+ExecStart=%h/.local/bin/mise exec ruby@3.3.11 node@22.14.0 -- bundle exec puma -C config/puma.rb
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+# The generated file uses Redis in production; a single Puma process needs none.
+development:
+  adapter: async
+
+test:
+  adapter: async
+
+production:
+  adapter: async
