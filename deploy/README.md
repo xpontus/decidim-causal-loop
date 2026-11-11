@@ -176,7 +176,7 @@ checkout follow a bare repository on the server instead of GitHub, and push
 to it over ssh. In step 3, replace the `git clone` from GitHub with:
 
 ```bash
-git init --bare /opt/rurbanive/causal_loop.git
+git init --bare --initial-branch=main /opt/rurbanive/causal_loop.git
 ```
 
 On the development machine (`myserver` is its ssh name):
